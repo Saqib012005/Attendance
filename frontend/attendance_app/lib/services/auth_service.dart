@@ -1,14 +1,15 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'storage_service.dart';
 
 class AuthService {
   final String baseUrl = ApiConfig.baseUrl;
   final Dio _dio = Dio();
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  
   late SharedPreferences _prefs;
 
   AuthService() {
@@ -18,7 +19,7 @@ class AuthService {
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await _storage.read(key: 'access_token');
+        final token = await StorageService.read(key: 'access_token');
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
@@ -37,13 +38,13 @@ class AuthService {
 
       if (response.statusCode == 200) {
         // Step 2: Store tokens securely
-        await _storage.write(key: 'access_token', value: response.data['access']);
-        await _storage.write(key: 'refresh_token', value: response.data['refresh']);
+        await StorageService.write(key: 'access_token', value: response.data['access']);
+        await StorageService.write(key: 'refresh_token', value: response.data['refresh']);
 
         // Step 3: Fetch and store user profile data
         try {
           final me = await _dio.get('/auth/me/');
-          await _storage.write(key: 'user', value: json.encode(me.data));
+          await StorageService.write(key: 'user', value: json.encode(me.data));
         } catch (e) {
           print('Error fetching user data: $e');
         }
@@ -98,7 +99,7 @@ class AuthService {
 
   Future<String> getUserRole() async {
     try {
-      final userJson = await _storage.read(key: 'user');
+      final userJson = await StorageService.read(key: 'user');
       if (userJson != null && userJson.isNotEmpty) {
         final map = json.decode(userJson) as Map<String, dynamic>;
         final role = (map['role'] ?? map['data']?['role'] ?? '').toString().toLowerCase();
@@ -106,7 +107,7 @@ class AuthService {
       }
       // Fallback: fetch from API and cache
       final me = await _dio.get('/auth/me/');
-      await _storage.write(key: 'user', value: json.encode(me.data));
+      await StorageService.write(key: 'user', value: json.encode(me.data));
       final role = (me.data['role'] ?? '').toString().toLowerCase();
       return role.isNotEmpty ? role : 'student';
     } catch (_) {
@@ -115,13 +116,13 @@ class AuthService {
   }
 
   Future<void> logout() async {
-    await _storage.delete(key: 'access_token');
-    await _storage.delete(key: 'refresh_token');
-    await _storage.delete(key: 'user');
+    await StorageService.delete(key: 'access_token');
+    await StorageService.delete(key: 'refresh_token');
+    await StorageService.delete(key: 'user');
   }
 
   Future<bool> isLoggedIn() async {
-    final token = await _storage.read(key: 'access_token');
+    final token = await StorageService.read(key: 'access_token');
     return token != null;
   }
 
