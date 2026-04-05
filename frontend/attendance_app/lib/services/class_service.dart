@@ -1,10 +1,11 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import '../config/api_config.dart';
+import 'storage_service.dart';
 
 class ClassService {
   final Dio _dio = Dio();
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  
   final String baseUrl = ApiConfig.baseUrl;
 
   ClassService() {
@@ -14,7 +15,7 @@ class ClassService {
   }
 
   Future<String?> _getToken() async {
-    return await _storage.read(key: 'access_token');
+    return await StorageService.read(key: 'access_token');
   }
 
   /// Check if student exists by email (for auto-fill feature)
