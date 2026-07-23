@@ -82,6 +82,8 @@ urlpatterns = [
     # Utility
     path('api/v1/ping/', ping, name='ping'),
 
+    re_path(r'^static/(?P<path>.*)$', static_serve, {'document_root': settings.STATIC_ROOT}),
+
     # Flutter Web — must be last
     re_path(r'^(?P<path>.*)$', serve_flutter, name='flutter_web'),
 ]
