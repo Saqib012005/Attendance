@@ -5,6 +5,7 @@ import 'screens/dashboard/student_dashboard.dart';
 import 'screens/dashboard/teacher_dashboard.dart';
 import 'screens/teacher/session_create_screen.dart';
 import 'screens/teacher/my_classes_screen.dart';
+import 'screens/admin/admin_dashboard_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -29,6 +30,7 @@ class MyApp extends StatelessWidget {
         '/student': (context) => const StudentDashboardPage(),
         '/teacher': (context) => const TeacherDashboardPage(),
         '/teacher/my-classes': (context) => const MyClassesScreen(),
+        '/admin': (context) => const AdminDashboardPage(),
         '/teacher/create-session': (context) => const SessionPage(
             // Add required subjects parameter later use backend (for testing)
           subjects: [
