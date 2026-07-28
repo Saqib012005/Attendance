@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'student_list_screen.dart';
+import '../../services/class_service.dart';
 import 'teacher_list_screen.dart';
+import 'student_list_screen.dart';
 
 abstract class _AppColors {
   static const tealDark = Color(0xFF007C91);
@@ -20,7 +21,38 @@ class ResetLoginScreen extends StatefulWidget {
 }
 
 class _ResetLoginScreenState extends State<ResetLoginScreen> {
+  final ClassService _classService = ClassService();
   bool _isSidebarExpanded = false;
+  bool _isLoading = false;
+  int _teacherCount = 0;
+  int _studentCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final stats = await _classService.getAdminStats();
+
+      if (mounted) {
+        setState(() {
+          _teacherCount = stats['teachers_count'] ?? 0;
+          _studentCount = stats['students_count'] ?? 0;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading stats: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +76,17 @@ class _ResetLoginScreenState extends State<ResetLoginScreen> {
               children: [
                 _buildHeaderSection(isMobile),
                 const SizedBox(height: 24),
-                _buildCards(isMobile),
+                if (_isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 40),
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(_AppColors.teal),
+                      ),
+                    ),
+                  )
+                else
+                  _buildCards(isMobile),
               ],
             ),
           ),
@@ -70,7 +112,17 @@ class _ResetLoginScreenState extends State<ResetLoginScreen> {
                     children: [
                       _buildDesktopHeader(),
                       const SizedBox(height: 32),
-                      _buildCards(false),
+                      if (_isLoading)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.only(top: 40),
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(_AppColors.teal),
+                            ),
+                          ),
+                        )
+                      else
+                        _buildCards(false),
                     ],
                   ),
                 ),
@@ -295,12 +347,26 @@ class _ResetLoginScreenState extends State<ResetLoginScreen> {
           ),
         const Icon(Icons.lock_reset_rounded, color: _AppColors.tealDark, size: 32),
         const SizedBox(width: 12),
-        Text(
-          'Login Reset',
-          style: TextStyle(
-            fontSize: isMobile ? 22 : 28,
-            fontWeight: FontWeight.w700,
-            color: _AppColors.textPrimary,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Login Reset',
+                style: TextStyle(
+                  fontSize: isMobile ? 22 : 28,
+                  fontWeight: FontWeight.w700,
+                  color: _AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                '${_teacherCount + _studentCount} total users',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: _AppColors.textMuted,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -308,73 +374,36 @@ class _ResetLoginScreenState extends State<ResetLoginScreen> {
   }
 
   Widget _buildCards(bool isMobile) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 700;
-
-        if (isCompact) {
-          return Column(
-            children: [
-              _buildResetCard(
-                title: 'Teachers',
-                count: '42',
-                icon: Icons.person_rounded,
-                isCompact: true,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const TeacherListScreen()),
-                ),
-              ),
-              const SizedBox(height: 24),
-              _buildResetCard(
-                title: 'Students',
-                count: '1467',
-                icon: Icons.people_alt_rounded,
-                isCompact: true,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const StudentListScreen()),
-                ),
-              ),
-            ],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(
-              child: _buildResetCard(
-                title: 'Teachers',
-                count: '42',
-                icon: Icons.person_rounded,
-                isCompact: false,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const TeacherListScreen()),
-                ),
-              ),
-            ),
-            const SizedBox(width: 24),
-            Expanded(
-              child: _buildResetCard(
-                title: 'Students',
-                count: '1467',
-                icon: Icons.people_alt_rounded,
-                isCompact: false,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const StudentListScreen()),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+    return Column(
+      children: [
+        _buildResetCard(
+          title: 'Teachers',
+          count: _teacherCount,
+          icon: Icons.person_rounded,
+          isCompact: isMobile,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const TeacherListScreen()),
+          ),
+        ),
+        const SizedBox(height: 24),
+        _buildResetCard(
+          title: 'Students',
+          count: _studentCount,
+          icon: Icons.people_alt_rounded,
+          isCompact: isMobile,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const StudentListScreen()),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildResetCard({
     required String title,
-    required String count,
+    required int count,
     required IconData icon,
     required bool isCompact,
     VoidCallback? onTap,
@@ -388,7 +417,7 @@ class _ResetLoginScreenState extends State<ResetLoginScreen> {
           gradient: const LinearGradient(
             begin: Alignment(0.41, 0.46),
             end: Alignment(0.88, 0.97),
-            colors: [Color(0xFF40D5E2), Color(0xFFB9F1FF)],
+            colors: [_AppColors.teal, _AppColors.tealLight],
           ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(33),
@@ -402,7 +431,6 @@ class _ResetLoginScreenState extends State<ResetLoginScreen> {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: isCompact ? 32 : 64,
-                fontFamily: 'Asap',
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -434,11 +462,10 @@ class _ResetLoginScreenState extends State<ResetLoginScreen> {
                   ),
                   child: Center(
                     child: Text(
-                      count,
+                      '$count',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: isCompact ? 20 : 32,
-                        fontFamily: 'Asap',
                         fontWeight: FontWeight.w800,
                       ),
                     ),

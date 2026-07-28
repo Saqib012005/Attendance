@@ -117,6 +117,98 @@ class ClassService {
     }
   }
 
+  /// Admin: Get all classes grouped by semester with student counts
+  Future<List<Map<String, dynamic>>> getAdminClassesSummary() async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.get(
+        '/admin/classes/summary/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(response.data['semesters']);
+      }
+
+      return [];
+    } catch (e) {
+      print('Error fetching admin classes summary: $e');
+      return [];
+    }
+  }
+
+  /// Admin: Get all classes in a semester with their enrolled students
+  Future<Map<String, dynamic>> getSemesterClasses(String semester) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.get(
+        '/admin/classes/by-semester/$semester/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+
+      return {};
+    } catch (e) {
+      print('Error fetching semester classes: $e');
+      return {};
+    }
+  }
+
+  /// Admin: Get all unique students in a semester with their enrolled class codes
+  Future<Map<String, dynamic>> getSemesterStudents(String semester) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.get(
+        '/admin/students/by-semester/$semester/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+
+      return {};
+    } catch (e) {
+      print('Error fetching semester students: $e');
+      return {};
+    }
+  }
+
+  /// Admin: Get all teachers with their class details
+  Future<Map<String, dynamic>> getTeachers() async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.get(
+        '/admin/teachers/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+
+      return {};
+    } catch (e) {
+      print('Error fetching teachers: $e');
+      return {};
+    }
+  }
+
   /// Get detailed information about a specific class
   Future<Map<String, dynamic>?> getClassDetails(int classId) async {
     try {
@@ -334,6 +426,75 @@ class ClassService {
     } catch (e) {
       print('Error updating student: $e');
       return false;
+    }
+  }
+
+  /// Admin: Get aggregate stats (teacher count, student count)
+  Future<Map<String, dynamic>> getAdminStats() async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.get(
+        '/admin/stats/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+
+      return {};
+    } catch (e) {
+      print('Error fetching admin stats: $e');
+      return {};
+    }
+  }
+
+  /// Admin: Get users by role (teachers or students)
+  Future<Map<String, dynamic>> getUsersByRole(String role) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.get(
+        '/admin/users/$role/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+
+      return {};
+    } catch (e) {
+      print('Error fetching $role: $e');
+      return {};
+    }
+  }
+
+  /// Admin: Toggle user access (is_active)
+  Future<Map<String, dynamic>> toggleUserAccess(int userId) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.patch(
+        '/admin/users/$userId/toggle-access/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+
+      return {};
+    } catch (e) {
+      print('Error toggling user access: $e');
+      return {};
     }
   }
 }

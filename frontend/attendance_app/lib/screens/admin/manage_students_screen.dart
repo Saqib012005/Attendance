@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../services/class_service.dart';
+import 'semester_classes_screen.dart';
 
 abstract class _AppColors {
   static const tealDark = Color(0xFF007C91);
@@ -12,12 +14,14 @@ abstract class _AppColors {
 
 class _SemesterCard {
   final int semester;
+  final String semesterLabel;
   final int studentCount;
   final Color color;
   final List<Color> gradient;
 
   const _SemesterCard({
     required this.semester,
+    required this.semesterLabel,
     required this.studentCount,
     required this.color,
     required this.gradient,
@@ -33,45 +37,64 @@ class ManageStudentsScreen extends StatefulWidget {
 
 class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
   bool _isSidebarExpanded = false;
+  bool _isLoading = false;
+  final ClassService _classService = ClassService();
+  List<_SemesterCard> _semesters = [];
 
-  static const _semesters = <_SemesterCard>[
-    _SemesterCard(
-      semester: 1,
-      studentCount: 1700,
-      color: Color(0xFFD34C53),
-      gradient: [Color(0xFFF2658B), Colors.white],
-    ),
-    _SemesterCard(
-      semester: 2,
-      studentCount: 1745,
-      color: Color(0xFFE4B40B),
-      gradient: [Color(0xFFE4BD3C), Colors.white],
-    ),
-    _SemesterCard(
-      semester: 3,
-      studentCount: 1896,
-      color: Color(0xFFA83FD9),
-      gradient: [Color(0xFFBA6CF5), Colors.white],
-    ),
-    _SemesterCard(
-      semester: 4,
-      studentCount: 345,
-      color: Color(0xFF4FBDD6),
-      gradient: [Color(0xFF3AB0E6), Colors.white],
-    ),
-    _SemesterCard(
-      semester: 5,
-      studentCount: 432,
-      color: Color(0xFF66BB6A),
-      gradient: [Color(0xFF81C784), Colors.white],
-    ),
-    _SemesterCard(
-      semester: 6,
-      studentCount: 580,
-      color: Color(0xFF46CDD5),
-      gradient: [Color(0xFF5FD4D4), Colors.white],
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadSemesters();
+  }
+
+  Future<void> _loadSemesters() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final summary = await _classService.getAdminClassesSummary();
+
+      if (mounted) {
+        const colorPalette = [
+          Color(0xFFD34C53),
+          Color(0xFFE4B40B),
+          Color(0xFFA83FD9),
+          Color(0xFF4FBDD6),
+          Color(0xFF66BB6A),
+          Color(0xFF46CDD5),
+        ];
+
+        const gradientPalette = [
+          [Color(0xFFF2658B), Colors.white],
+          [Color(0xFFE4BD3C), Colors.white],
+          [Color(0xFFBA6CF5), Colors.white],
+          [Color(0xFF3AB0E6), Colors.white],
+          [Color(0xFF81C784), Colors.white],
+          [Color(0xFF5FD4D4), Colors.white],
+        ];
+
+        setState(() {
+          _semesters = summary.asMap().entries.map((entry) {
+            final index = entry.key;
+            final data = entry.value;
+            final semesterStr = data['semester']?.toString() ?? '';
+            return _SemesterCard(
+              semester: int.tryParse(semesterStr) ?? index + 1,
+              semesterLabel: semesterStr,
+              studentCount: data['student_count'] ?? 0,
+              color: colorPalette[index % colorPalette.length],
+              gradient: gradientPalette[index % gradientPalette.length],
+            );
+          }).toList();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading semesters: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +122,18 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                   children: [
                     _buildHeaderSection(isMobile),
                     const SizedBox(height: 24),
-                    _buildSemesterGrid(crossAxisCount, isMobile),
+                    _isLoading
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.only(top: 60),
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(_AppColors.teal),
+                              ),
+                            ),
+                          )
+                        : _semesters.isEmpty
+                            ? _buildEmptyState()
+                            : _buildSemesterGrid(crossAxisCount, isMobile),
                   ],
                 ),
               ),
@@ -127,7 +161,18 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                     children: [
                       _buildDesktopHeader(),
                       const SizedBox(height: 32),
-                      _buildSemesterGrid(3, false),
+                      _isLoading
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.only(top: 60),
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(_AppColors.teal),
+                                ),
+                              ),
+                            )
+                          : _semesters.isEmpty
+                              ? _buildEmptyState()
+                              : _buildSemesterGrid(3, false),
                     ],
                   ),
                 ),
@@ -384,9 +429,51 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     );
   }
 
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.school_outlined,
+            size: 80,
+            color: Colors.grey.shade300,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No classes found',
+            style: TextStyle(
+              fontSize: 18,
+              color: _AppColors.textMuted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Create classes to see semester summaries',
+            style: TextStyle(
+              fontSize: 14,
+              color: _AppColors.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSemesterCard(_SemesterCard semester, bool isCompact) {
     return InkWell(
-      onTap: () {},
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SemesterClassesScreen(
+              semesterLabel: semester.semesterLabel,
+              semesterDisplay: 'Semester ${semester.semester}',
+            ),
+          ),
+        );
+      },
       borderRadius: BorderRadius.circular(43),
       child: Container(
         padding: EdgeInsets.symmetric(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/class_service.dart';
 
 abstract class _AppColors {
   static const tealDark = Color(0xFF007C91);
@@ -10,30 +11,6 @@ abstract class _AppColors {
   static const textMuted = Color(0xFF6B7280);
 }
 
-class _Teacher {
-  final String name;
-  final String email;
-  final bool hasAccess;
-
-  const _Teacher({
-    required this.name,
-    required this.email,
-    required this.hasAccess,
-  });
-}
-
-const _teachers = [
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: true),
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: true),
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: false),
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: true),
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: true),
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: false),
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: true),
-  _Teacher(name: 'Sujan Bhat', email: 'botsujanbhatti@gmail.com', hasAccess: true),
-  _Teacher(name: 'Sharon', email: 'mortarsharon@gmail.com', hasAccess: false),
-];
-
 class TeacherListScreen extends StatefulWidget {
   const TeacherListScreen({super.key});
 
@@ -42,23 +19,61 @@ class TeacherListScreen extends StatefulWidget {
 }
 
 class _TeacherListScreenState extends State<TeacherListScreen> {
+  final ClassService _classService = ClassService();
   bool _isSidebarExpanded = false;
+  bool _isLoading = false;
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  List<Map<String, dynamic>> _teachers = [];
 
-  List<_Teacher> get _filteredTeachers {
+  List<Map<String, dynamic>> get _filteredTeachers {
     if (_searchQuery.isEmpty) return _teachers;
     final q = _searchQuery.toLowerCase();
-    return _teachers.where((t) =>
-      t.name.toLowerCase().contains(q) ||
-      t.email.toLowerCase().contains(q)
-    ).toList();
+    return _teachers.where((t) {
+      final name = (t['full_name'] ?? '').toString().toLowerCase();
+      final email = (t['email'] ?? '').toString().toLowerCase();
+      return name.contains(q) || email.contains(q);
+    }).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTeachers();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadTeachers() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final data = await _classService.getUsersByRole('teachers');
+      final users = data['teachers'] as List<dynamic>? ?? [];
+
+      if (mounted) {
+        setState(() {
+          _teachers = users.cast<Map<String, dynamic>>();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading teachers: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _toggleAccess(Map<String, dynamic> teacher) async {
+    final userId = teacher['id'] as int;
+    final result = await _classService.toggleUserAccess(userId);
+
+    if (result.isNotEmpty) {
+      await _loadTeachers();
+    }
   }
 
   @override
@@ -80,11 +95,23 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
             if (!isMobile) const SizedBox(height: 16),
             _buildSearchBar(isMobile),
             const SizedBox(height: 12),
-            Expanded(child: _buildTable(isMobile)),
+            Expanded(child: _buildContent(isMobile)),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildContent(bool isMobile) {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(_AppColors.teal),
+        ),
+      );
+    }
+
+    return _buildTable(isMobile);
   }
 
   Widget _buildDesktopLayout() {
@@ -104,7 +131,7 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                     const SizedBox(height: 24),
                     _buildSearchBar(false),
                     const SizedBox(height: 16),
-                    Expanded(child: _buildTable(false)),
+                    Expanded(child: _buildContent(false)),
                   ],
                 ),
               ),
@@ -178,7 +205,6 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                 style: TextStyle(
                   color: _AppColors.tealDark,
                   fontSize: 38,
-                  fontFamily: 'Inter',
                   fontWeight: FontWeight.w700,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -189,7 +215,6 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                 style: TextStyle(
                   fontSize: 16,
                   color: _AppColors.textMuted,
-                  fontFamily: 'Inter',
                 ),
               ),
             ],
@@ -380,17 +405,19 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
   Widget _buildTable(bool isMobile) {
     final filtered = _filteredTeachers;
 
+    if (filtered.isEmpty && !_isLoading) {
+      return const Center(child: Text('No teachers found'));
+    }
+
     if (isMobile) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: filtered.isEmpty
-            ? const Center(child: Text('No teachers found'))
-            : ListView.separated(
-                itemCount: filtered.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) =>
-                    _buildTeacherCard(filtered[index], index + 1),
-              ),
+        child: ListView.separated(
+          itemCount: filtered.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) =>
+              _buildTeacherCard(filtered[index], index + 1),
+        ),
       );
     }
 
@@ -408,17 +435,15 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
             children: [
               _buildTableHeader(isTablet),
               Expanded(
-                child: filtered.isEmpty
-                    ? const Center(child: Text('No teachers found'))
-                    : ListView.builder(
-                        padding: EdgeInsets.zero,
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) => _buildTableRow(
-                          filtered[index],
-                          index + 1,
-                          isTablet,
-                        ),
-                      ),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) => _buildTableRow(
+                    filtered[index],
+                    index + 1,
+                    isTablet,
+                  ),
+                ),
               ),
             ],
           ),
@@ -453,40 +478,30 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 20,
-                fontStyle: FontStyle.italic,
                 fontWeight: FontWeight.w700,
-                fontFamily: 'Inclusive Sans',
               ),
             ),
           ),
           Expanded(
             child: Center(
-              child: Transform.translate(
-                offset: Offset(isCompact ? -18 : -40, 0),
-                child: const Text(
-                  'Teacher Name',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontFamily: 'Jomhuria',
-                    fontWeight: FontWeight.w400,
-                  ),
+              child: Text(
+                'Teacher Name',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isCompact ? 20 : 26,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ),
           Expanded(
             child: Center(
-              child: Transform.translate(
-                offset: Offset(isCompact ? -18 : -40, 0),
-                child: const Text(
-                  'Teacher Mail',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontFamily: 'Jomhuria',
-                    fontWeight: FontWeight.w400,
-                  ),
+              child: Text(
+                'Teacher Mail',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isCompact ? 20 : 26,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -499,8 +514,7 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 26,
-                  fontFamily: 'Jomhuria',
-                  fontWeight: FontWeight.w400,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -510,7 +524,11 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
     );
   }
 
-  Widget _buildTableRow(_Teacher teacher, int index, bool isMobile) {
+  Widget _buildTableRow(Map<String, dynamic> teacher, int index, bool isMobile) {
+    final name = teacher['full_name'] ?? 'Unknown';
+    final email = teacher['email'] ?? '';
+    final hasAccess = teacher['is_active'] == true;
+
     return Container(
       height: isMobile ? 64 : 72,
       decoration: BoxDecoration(
@@ -526,7 +544,6 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
               '$index',
               style: const TextStyle(
                 fontSize: 32,
-                fontFamily: 'Jomhuria',
                 fontWeight: FontWeight.w400,
               ),
             ),
@@ -535,10 +552,9 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
             child: Padding(
               padding: EdgeInsets.only(left: isMobile ? 12 : 24),
               child: Text(
-                teacher.name,
+                name,
                 style: const TextStyle(
                   fontSize: 20,
-                  fontFamily: 'Inclusive Sans',
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -547,29 +563,11 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
           Expanded(
             child: Padding(
               padding: EdgeInsets.only(left: isMobile ? 12 : 24),
-              child: RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: teacher.email.split('@')[0],
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 20,
-                        fontFamily: 'Inclusive Sans',
-                        fontWeight: FontWeight.w400,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                    TextSpan(
-                      text: '@${teacher.email.split('@')[1]}',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 20,
-                        fontFamily: 'Inclusive Sans',
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
+              child: Text(
+                email,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ),
@@ -581,12 +579,12 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                 width: isMobile ? 34 : 42,
                 height: isMobile ? 34 : 42,
                 decoration: ShapeDecoration(
-                  color: teacher.hasAccess
+                  color: hasAccess
                       ? const Color(0xFF1D8E2E)
                       : const Color(0xFFF60000),
                   shape: OvalBorder(),
                 ),
-                child: teacher.hasAccess
+                child: hasAccess
                     ? Icon(Icons.check, color: Colors.white, size: isMobile ? 18 : 22)
                     : Icon(Icons.close, color: Colors.white, size: isMobile ? 18 : 22),
               ),
@@ -602,7 +600,11 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
     );
   }
 
-  Widget _buildTeacherCard(_Teacher teacher, int index) {
+  Widget _buildTeacherCard(Map<String, dynamic> teacher, int index) {
+    final name = teacher['full_name'] ?? 'Unknown';
+    final email = teacher['email'] ?? '';
+    final hasAccess = teacher['is_active'] == true;
+
     return InkWell(
       onTap: () => _showAccessDialog(teacher),
       borderRadius: BorderRadius.circular(24),
@@ -629,7 +631,6 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                 style: const TextStyle(
                   color: _AppColors.tealDark,
                   fontSize: 22,
-                  fontFamily: 'Jomhuria',
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -640,19 +641,18 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    teacher.name,
+                    name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 18,
-                      fontFamily: 'Inclusive Sans',
                       fontWeight: FontWeight.w700,
                       color: _AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    teacher.email,
+                    email,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -666,17 +666,17 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: teacher.hasAccess
+                          color: hasAccess
                               ? const Color(0xFFE8F5E9)
                               : const Color(0xFFFFEBEE),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          teacher.hasAccess ? 'Access granted' : 'No access',
+                          hasAccess ? 'Access granted' : 'No access',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: teacher.hasAccess
+                            color: hasAccess
                                 ? const Color(0xFF1D8E2E)
                                 : const Color(0xFFF60000),
                           ),
@@ -699,14 +699,17 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
     );
   }
 
-  void _showAccessDialog(_Teacher teacher) {
+  void _showAccessDialog(Map<String, dynamic> teacher) {
+    final name = teacher['full_name'] ?? 'Unknown';
+    final hasAccess = teacher['is_active'] == true;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(teacher.hasAccess ? 'Revoke Access' : 'Grant Access'),
+        title: Text(hasAccess ? 'Revoke Access' : 'Grant Access'),
         content: Text(
-          '${teacher.hasAccess ? 'Revoke' : 'Grant'} login access for ${teacher.name}?',
+          '${hasAccess ? 'Revoke' : 'Grant'} login access for $name?',
         ),
         actions: [
           TextButton(
@@ -716,20 +719,12 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    teacher.hasAccess
-                        ? 'Access revoked for ${teacher.name}'
-                        : 'Access granted for ${teacher.name}',
-                  ),
-                ),
-              );
+              _toggleAccess(teacher);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: teacher.hasAccess ? Colors.red : Colors.green,
+              backgroundColor: hasAccess ? Colors.red : Colors.green,
             ),
-            child: Text(teacher.hasAccess ? 'Revoke' : 'Grant'),
+            child: Text(hasAccess ? 'Revoke' : 'Grant'),
           ),
         ],
       ),

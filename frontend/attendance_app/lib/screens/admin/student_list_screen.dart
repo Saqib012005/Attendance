@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/class_service.dart';
 
 abstract class _AppColors {
   static const tealDark = Color(0xFF007C91);
@@ -10,34 +11,6 @@ abstract class _AppColors {
   static const textMuted = Color(0xFF6B7280);
 }
 
-class _Student {
-  final String name;
-  final String email;
-  final String rollNo;
-  final String semester;
-  final bool hasAccess;
-
-  const _Student({
-    required this.name,
-    required this.email,
-    required this.rollNo,
-    required this.semester,
-    required this.hasAccess,
-  });
-}
-
-const _students = [
-  _Student(name: 'Aarav Sharma', email: 'aarav.sharma@example.com', rollNo: 'CS2201', semester: '5th', hasAccess: true),
-  _Student(name: 'Priya Patel', email: 'priya.patel@example.com', rollNo: 'CS2202', semester: '5th', hasAccess: true),
-  _Student(name: 'Rahul Verma', email: 'rahul.verma@example.com', rollNo: 'CS2203', semester: '5th', hasAccess: false),
-  _Student(name: 'Ananya Singh', email: 'ananya.singh@example.com', rollNo: 'CS2204', semester: '3rd', hasAccess: true),
-  _Student(name: 'Vikram Joshi', email: 'vikram.joshi@example.com', rollNo: 'CS2205', semester: '3rd', hasAccess: true),
-  _Student(name: 'Neha Gupta', email: 'neha.gupta@example.com', rollNo: 'CS2206', semester: '5th', hasAccess: false),
-  _Student(name: 'Rohan Desai', email: 'rohan.desai@example.com', rollNo: 'CS2207', semester: '1st', hasAccess: true),
-  _Student(name: 'Isha Mehta', email: 'isha.mehta@example.com', rollNo: 'CS2208', semester: '1st', hasAccess: true),
-  _Student(name: 'Arjun Nair', email: 'arjun.nair@example.com', rollNo: 'CS2209', semester: '3rd', hasAccess: false),
-];
-
 class StudentListScreen extends StatefulWidget {
   const StudentListScreen({super.key});
 
@@ -46,24 +19,62 @@ class StudentListScreen extends StatefulWidget {
 }
 
 class _StudentListScreenState extends State<StudentListScreen> {
+  final ClassService _classService = ClassService();
   bool _isSidebarExpanded = false;
+  bool _isLoading = false;
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  List<Map<String, dynamic>> _students = [];
 
-  List<_Student> get _filteredStudents {
+  List<Map<String, dynamic>> get _filteredStudents {
     if (_searchQuery.isEmpty) return _students;
     final q = _searchQuery.toLowerCase();
-    return _students.where((s) =>
-      s.name.toLowerCase().contains(q) ||
-      s.email.toLowerCase().contains(q) ||
-      s.rollNo.toLowerCase().contains(q)
-    ).toList();
+    return _students.where((s) {
+      final name = (s['full_name'] ?? '').toString().toLowerCase();
+      final email = (s['email'] ?? '').toString().toLowerCase();
+      final rollNo = (s['roll_no'] ?? '').toString().toLowerCase();
+      return name.contains(q) || email.contains(q) || rollNo.contains(q);
+    }).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStudents();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadStudents() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final data = await _classService.getUsersByRole('students');
+      final users = data['students'] as List<dynamic>? ?? [];
+
+      if (mounted) {
+        setState(() {
+          _students = users.cast<Map<String, dynamic>>();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading students: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _toggleAccess(Map<String, dynamic> student) async {
+    final userId = student['id'] as int;
+    final result = await _classService.toggleUserAccess(userId);
+
+    if (result.isNotEmpty) {
+      await _loadStudents();
+    }
   }
 
   @override
@@ -85,11 +96,23 @@ class _StudentListScreenState extends State<StudentListScreen> {
             if (!isMobile) const SizedBox(height: 16),
             _buildSearchBar(isMobile),
             const SizedBox(height: 12),
-            Expanded(child: _buildTable(isMobile)),
+            Expanded(child: _buildContent(isMobile)),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildContent(bool isMobile) {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(_AppColors.teal),
+        ),
+      );
+    }
+
+    return _buildTable(isMobile);
   }
 
   Widget _buildDesktopLayout() {
@@ -109,7 +132,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                     const SizedBox(height: 24),
                     _buildSearchBar(false),
                     const SizedBox(height: 16),
-                    Expanded(child: _buildTable(false)),
+                    Expanded(child: _buildContent(false)),
                   ],
                 ),
               ),
@@ -183,7 +206,6 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 style: TextStyle(
                   color: _AppColors.tealDark,
                   fontSize: 38,
-                  fontFamily: 'Inter',
                   fontWeight: FontWeight.w700,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -194,7 +216,6 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 style: TextStyle(
                   fontSize: 16,
                   color: _AppColors.textMuted,
-                  fontFamily: 'Inter',
                 ),
               ),
             ],
@@ -385,17 +406,19 @@ class _StudentListScreenState extends State<StudentListScreen> {
   Widget _buildTable(bool isMobile) {
     final filtered = _filteredStudents;
 
+    if (filtered.isEmpty && !_isLoading) {
+      return const Center(child: Text('No students found'));
+    }
+
     if (isMobile) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: filtered.isEmpty
-            ? const Center(child: Text('No students found'))
-            : ListView.separated(
-                itemCount: filtered.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) =>
-                    _buildStudentCard(filtered[index], index + 1),
-              ),
+        child: ListView.separated(
+          itemCount: filtered.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) =>
+              _buildStudentCard(filtered[index], index + 1),
+        ),
       );
     }
 
@@ -413,17 +436,15 @@ class _StudentListScreenState extends State<StudentListScreen> {
             children: [
               _buildTableHeader(isTablet),
               Expanded(
-                child: filtered.isEmpty
-                    ? const Center(child: Text('No students found'))
-                    : ListView.builder(
-                        padding: EdgeInsets.zero,
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) => _buildTableRow(
-                          filtered[index],
-                          index + 1,
-                          isTablet,
-                        ),
-                      ),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) => _buildTableRow(
+                    filtered[index],
+                    index + 1,
+                    isTablet,
+                  ),
+                ),
               ),
             ],
           ),
@@ -458,40 +479,30 @@ class _StudentListScreenState extends State<StudentListScreen> {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 20,
-                fontStyle: FontStyle.italic,
                 fontWeight: FontWeight.w700,
-                fontFamily: 'Inclusive Sans',
               ),
             ),
           ),
           Expanded(
             child: Center(
-              child: Transform.translate(
-                offset: Offset(isCompact ? -18 : -40, 0),
-                child: const Text(
-                  'Student Name',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontFamily: 'Jomhuria',
-                    fontWeight: FontWeight.w400,
-                  ),
+              child: Text(
+                'Student Name',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isCompact ? 20 : 26,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ),
           Expanded(
             child: Center(
-              child: Transform.translate(
-                offset: Offset(isCompact ? -18 : -40, 0),
-                child: const Text(
-                  'Student Mail',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontFamily: 'Jomhuria',
-                    fontWeight: FontWeight.w400,
-                  ),
+              child: Text(
+                'Student Mail',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isCompact ? 20 : 26,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -504,8 +515,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 26,
-                  fontFamily: 'Jomhuria',
-                  fontWeight: FontWeight.w400,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -515,7 +525,11 @@ class _StudentListScreenState extends State<StudentListScreen> {
     );
   }
 
-  Widget _buildTableRow(_Student student, int index, bool isMobile) {
+  Widget _buildTableRow(Map<String, dynamic> student, int index, bool isMobile) {
+    final name = student['full_name'] ?? 'Unknown';
+    final email = student['email'] ?? '';
+    final hasAccess = student['is_active'] == true;
+
     return Container(
       height: isMobile ? 64 : 72,
       decoration: BoxDecoration(
@@ -531,7 +545,6 @@ class _StudentListScreenState extends State<StudentListScreen> {
               '$index',
               style: const TextStyle(
                 fontSize: 32,
-                fontFamily: 'Jomhuria',
                 fontWeight: FontWeight.w400,
               ),
             ),
@@ -540,10 +553,9 @@ class _StudentListScreenState extends State<StudentListScreen> {
             child: Padding(
               padding: EdgeInsets.only(left: isMobile ? 12 : 24),
               child: Text(
-                student.name,
+                name,
                 style: const TextStyle(
                   fontSize: 20,
-                  fontFamily: 'Inclusive Sans',
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -552,29 +564,11 @@ class _StudentListScreenState extends State<StudentListScreen> {
           Expanded(
             child: Padding(
               padding: EdgeInsets.only(left: isMobile ? 12 : 24),
-              child: RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: student.email.split('@')[0],
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 20,
-                        fontFamily: 'Inclusive Sans',
-                        fontWeight: FontWeight.w400,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                    TextSpan(
-                      text: '@${student.email.split('@')[1]}',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 20,
-                        fontFamily: 'Inclusive Sans',
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
+              child: Text(
+                email,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ),
@@ -586,12 +580,12 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 width: isMobile ? 34 : 42,
                 height: isMobile ? 34 : 42,
                 decoration: ShapeDecoration(
-                  color: student.hasAccess
+                  color: hasAccess
                       ? const Color(0xFF1D8E2E)
                       : const Color(0xFFF60000),
                   shape: OvalBorder(),
                 ),
-                child: student.hasAccess
+                child: hasAccess
                     ? Icon(Icons.check, color: Colors.white, size: isMobile ? 18 : 22)
                     : Icon(Icons.close, color: Colors.white, size: isMobile ? 18 : 22),
               ),
@@ -607,7 +601,12 @@ class _StudentListScreenState extends State<StudentListScreen> {
     );
   }
 
-  Widget _buildStudentCard(_Student student, int index) {
+  Widget _buildStudentCard(Map<String, dynamic> student, int index) {
+    final name = student['full_name'] ?? 'Unknown';
+    final email = student['email'] ?? '';
+    final rollNo = student['roll_no'] ?? '';
+    final hasAccess = student['is_active'] == true;
+
     return InkWell(
       onTap: () => _showAccessDialog(student),
       borderRadius: BorderRadius.circular(24),
@@ -634,7 +633,6 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 style: const TextStyle(
                   color: _AppColors.tealDark,
                   fontSize: 22,
-                  fontFamily: 'Jomhuria',
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -645,19 +643,18 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    student.name,
+                    name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 18,
-                      fontFamily: 'Inclusive Sans',
                       fontWeight: FontWeight.w700,
                       color: _AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    student.email,
+                    email,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -665,23 +662,34 @@ class _StudentListScreenState extends State<StudentListScreen> {
                       color: _AppColors.textMuted,
                     ),
                   ),
+                  if (rollNo.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      rollNo,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: _AppColors.tealDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: student.hasAccess
+                          color: hasAccess
                               ? const Color(0xFFE8F5E9)
                               : const Color(0xFFFFEBEE),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          student.hasAccess ? 'Access granted' : 'No access',
+                          hasAccess ? 'Access granted' : 'No access',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: student.hasAccess
+                            color: hasAccess
                                 ? const Color(0xFF1D8E2E)
                                 : const Color(0xFFF60000),
                           ),
@@ -704,14 +712,17 @@ class _StudentListScreenState extends State<StudentListScreen> {
     );
   }
 
-  void _showAccessDialog(_Student student) {
+  void _showAccessDialog(Map<String, dynamic> student) {
+    final name = student['full_name'] ?? 'Unknown';
+    final hasAccess = student['is_active'] == true;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(student.hasAccess ? 'Revoke Access' : 'Grant Access'),
+        title: Text(hasAccess ? 'Revoke Access' : 'Grant Access'),
         content: Text(
-          '${student.hasAccess ? 'Revoke' : 'Grant'} login access for ${student.name}?',
+          '${hasAccess ? 'Revoke' : 'Grant'} login access for $name?',
         ),
         actions: [
           TextButton(
@@ -721,20 +732,12 @@ class _StudentListScreenState extends State<StudentListScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    student.hasAccess
-                        ? 'Access revoked for ${student.name}'
-                        : 'Access granted for ${student.name}',
-                  ),
-                ),
-              );
+              _toggleAccess(student);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: student.hasAccess ? Colors.red : Colors.green,
+              backgroundColor: hasAccess ? Colors.red : Colors.green,
             ),
-            child: Text(student.hasAccess ? 'Revoke' : 'Grant'),
+            child: Text(hasAccess ? 'Revoke' : 'Grant'),
           ),
         ],
       ),

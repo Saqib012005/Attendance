@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../services/profile_service.dart';
+import '../../services/class_service.dart';
 
 class AdminProfileScreen extends StatefulWidget {
   const AdminProfileScreen({super.key});
@@ -9,14 +11,29 @@ class AdminProfileScreen extends StatefulWidget {
 
 class _AdminProfileScreenState extends State<AdminProfileScreen>
     with TickerProviderStateMixin {
+  final ProfileService _profileService = ProfileService();
+  final ClassService _classService = ClassService();
+
   late AnimationController _haloController;
   late Animation<double> _haloAnim;
   late AnimationController _fadeController;
   late Animation<double> _fadeIn;
 
+  bool isLoading = true;
+  String userName = 'Admin';
+  String userEmail = 'Loading...';
+  String userRole = 'Admin';
+  int teacherCount = 0;
+  int studentCount = 0;
+
   @override
   void initState() {
     super.initState();
+    _setupAnimations();
+    _loadProfileData();
+  }
+
+  void _setupAnimations() {
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -32,6 +49,37 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
       CurvedAnimation(parent: _haloController, curve: Curves.easeInOut),
     );
     _haloController.repeat(reverse: true);
+  }
+
+  Future<void> _loadProfileData() async {
+    setState(() => isLoading = true);
+
+    try {
+      final results = await Future.wait([
+        _profileService.getUserProfile(),
+        _classService.getAdminStats(),
+      ]);
+
+      final profile = results[0];
+      final stats = results[1] as Map<String, dynamic>;
+
+      if (mounted) {
+        setState(() {
+          final role = profile?['role'] as String? ?? 'admin';
+          userName = (profile?['username'] as String?) ?? 'Admin';
+          userEmail = (profile?['email'] as String?) ?? 'Not available';
+          userRole = role[0].toUpperCase() + role.substring(1);
+          teacherCount = (stats['teachers_count'] as int?) ?? 0;
+          studentCount = (stats['students_count'] as int?) ?? 0;
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading profile: $e');
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
   }
 
   @override
@@ -55,15 +103,19 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
             children: [
               _buildTopBar(isMobile),
               Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Padding(
-                    padding: EdgeInsets.all(isMobile ? 16 : 40),
-                    child: isDesktop
-                        ? _buildDesktopContent()
-                        : _buildMobileContent(isMobile),
-                  ),
-                ),
+                child: isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      )
+                    : SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Padding(
+                          padding: EdgeInsets.all(isMobile ? 16 : 40),
+                          child: isDesktop
+                              ? _buildDesktopContent()
+                              : _buildMobileContent(isMobile),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -117,7 +169,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
             ),
             child: IconButton(
               icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: () {},
+              onPressed: _loadProfileData,
             ),
           ),
         ],
@@ -154,7 +206,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
           child: Column(
             children: [
               Text(
-                'Sujan Bhatti',
+                userName,
                 style: TextStyle(
                   color: const Color(0xFFE0F2F5),
                   fontSize: isMobile ? 28 : 37,
@@ -164,7 +216,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                'Admin',
+                userRole,
                 style: TextStyle(
                   color: const Color(0xFFDADBDC),
                   fontSize: isMobile ? 20 : 27,
@@ -181,9 +233,8 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
           runSpacing: 16,
           alignment: WrapAlignment.center,
           children: [
-            _buildStatCard('Classes\nManaged', '4'),
-            _buildStatCard('Total Classes\nTaken', '28'),
-            _buildStatCard('Total\nStudents', '340'),
+            _buildStatCard('Total\nTeachers', '$teacherCount'),
+            _buildStatCard('Total\nStudents', '$studentCount'),
           ],
         ),
         const SizedBox(height: 24),
@@ -200,9 +251,9 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildStatCard('Classes\nManaged', '4'),
+          _buildStatCard('Total\nTeachers', '$teacherCount'),
           const SizedBox(height: 24),
-          _buildStatCard('Total Classes\nTaken', '28'),
+          _buildStatCard('Total\nStudents', '$studentCount'),
         ],
       ),
     );
@@ -214,7 +265,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _buildStatCard('Total\nStudents', '340'),
+          _buildStatCard('Total\nUsers', '${teacherCount + studentCount}'),
           const SizedBox(height: 24),
           _buildEditProfileCard(false),
         ],
@@ -232,7 +283,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
           child: Column(
             children: [
               Text(
-                'Sujan Bhatti',
+                userName,
                 style: const TextStyle(
                   color: Color(0xFFE0F2F5),
                   fontSize: 37,
@@ -242,7 +293,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                'Admin',
+                userRole,
                 style: const TextStyle(
                   color: Color(0xFFDADBDC),
                   fontSize: 27,
@@ -279,7 +330,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
               radius: isMobile ? 70 : 100,
               backgroundColor: Colors.white,
               child: Text(
-                'S',
+                userName.isNotEmpty ? userName[0].toUpperCase() : 'A',
                 style: TextStyle(
                   fontSize: isMobile ? 80 : 110,
                   fontWeight: FontWeight.w700,
@@ -395,10 +446,10 @@ class _AdminProfileScreenState extends State<AdminProfileScreen>
               child: const Icon(Icons.email_rounded, color: Colors.white, size: 24),
             ),
             const SizedBox(width: 20),
-            const Expanded(
+            Expanded(
               child: Text(
-                'sujanbhattisamosaman@gmail.com',
-                style: TextStyle(
+                userEmail,
+                style: const TextStyle(
                   color: Color(0xFFE0F2F5),
                   fontSize: 22,
                   fontFamily: 'Inter',

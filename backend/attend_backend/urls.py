@@ -9,6 +9,13 @@ from attendance.views import (
     MeView,
     MyTokenObtainPairView,
     ping,
+    admin_classes_summary,
+    admin_semester_classes,
+    admin_semester_students,
+    admin_teachers_list,
+    admin_stats,
+    admin_users_list,
+    admin_toggle_user_access,
     class_list_create,
     class_detail,
     get_class_students,
@@ -51,6 +58,15 @@ urlpatterns = [
     path('api/v1/auth/register/', RegisterView.as_view(), name='register'),
     path('api/v1/auth/me/', MeView.as_view(), name='me'),
     path('api/v1/auth/check-student/', check_student_by_email, name='check-student'),
+
+    # Admin endpoints
+    path('api/v1/admin/classes/summary/', admin_classes_summary, name='admin_classes_summary'),
+    path('api/v1/admin/classes/by-semester/<str:semester>/', admin_semester_classes, name='admin_semester_classes'),
+    path('api/v1/admin/students/by-semester/<str:semester>/', admin_semester_students, name='admin_semester_students'),
+    path('api/v1/admin/teachers/', admin_teachers_list, name='admin_teachers_list'),
+    path('api/v1/admin/stats/', admin_stats, name='admin_stats'),
+    path('api/v1/admin/users/<str:role>/', admin_users_list, name='admin_users_list'),
+    path('api/v1/admin/users/<int:user_id>/toggle-access/', admin_toggle_user_access, name='admin_toggle_user_access'),
 
     # Class management (Teacher)
     path('api/v1/classes/', class_list_create, name='class_list_create'),
