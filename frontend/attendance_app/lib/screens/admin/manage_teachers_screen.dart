@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/class_service.dart';
+import 'admin_class_detail_screen.dart';
 
 abstract class _AppColors {
   static const tealDark = Color(0xFF007C91);
@@ -686,7 +687,11 @@ class _ManageTeachersScreenState extends State<ManageTeachersScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 48),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, color: _AppColors.tealDark, size: 20),
+                onPressed: () => _showEditTeacherDialog(teacher),
+                tooltip: 'Edit teacher',
+              ),
             ],
           ),
         ),
@@ -715,39 +720,61 @@ class _ManageTeachersScreenState extends State<ManageTeachersScreen> {
                 const SizedBox(height: 6),
                 ...classes.map((cls) => Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _AppColors.teal.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(6),
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AdminClassDetailScreen(
+                          classId: cls['id'],
+                          classCode: cls['class_code'] ?? '',
+                          className: cls['class_name'] ?? '',
                         ),
-                        child: Text(
-                          cls['class_code'] ?? '',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _AppColors.tealDark,
+                      ),
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _AppColors.teal.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              cls['class_code'] ?? '',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _AppColors.tealDark,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              cls['class_name'] ?? '',
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            '${cls['student_count'] ?? 0} students',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          cls['class_name'] ?? '',
-                          style: const TextStyle(fontSize: 13),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        '${cls['student_count'] ?? 0} students',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 )),
               ],
@@ -784,77 +811,83 @@ class _ManageTeachersScreenState extends State<ManageTeachersScreen> {
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: Colors.grey.shade200),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEAF7FA),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    '$displayIndex',
-                    style: const TextStyle(
-                      color: _AppColors.tealDark,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEAF7FA),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$displayIndex',
+                      style: const TextStyle(
+                        color: _AppColors.tealDark,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              teacher['username'] ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                teacher['username'] ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black,
+                                ),
                               ),
                             ),
+                            if (classes.isNotEmpty)
+                              Icon(
+                                isExpanded ? Icons.expand_less : Icons.expand_more,
+                                color: _AppColors.teal,
+                                size: 24,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          teacher['email'] ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: _AppColors.textMuted,
                           ),
-                          if (classes.isNotEmpty)
-                            Icon(
-                              isExpanded ? Icons.expand_less : Icons.expand_more,
-                              color: _AppColors.teal,
-                              size: 24,
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        teacher['email'] ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: _AppColors.textMuted,
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${teacher['class_count'] ?? 0} classes',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: _AppColors.tealDark,
-                          fontWeight: FontWeight.w600,
+                        const SizedBox(height: 6),
+                        Text(
+                          '${teacher['class_count'] ?? 0} classes',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: _AppColors.tealDark,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: _AppColors.tealDark, size: 20),
+                    onPressed: () => _showEditTeacherDialog(teacher),
+                    tooltip: 'Edit teacher',
+                  ),
+                ],
+              ),
           ),
         ),
         AnimatedCrossFade(
@@ -897,39 +930,61 @@ class _ManageTeachersScreenState extends State<ManageTeachersScreen> {
                 else
                   ...classes.map((cls) => Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _AppColors.teal.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AdminClassDetailScreen(
+                            classId: cls['id'],
+                            classCode: cls['class_code'] ?? '',
+                            className: cls['class_name'] ?? '',
                           ),
-                          child: Text(
-                            cls['class_code'] ?? '',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: _AppColors.tealDark,
+                        ),
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _AppColors.teal.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                cls['class_code'] ?? '',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: _AppColors.tealDark,
+                                ),
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                cls['class_name'] ?? '',
+                                style: const TextStyle(fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              '${cls['student_count'] ?? 0} students',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+                          ],
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            cls['class_name'] ?? '',
-                            style: const TextStyle(fontSize: 14),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Text(
-                          '${cls['student_count'] ?? 0} students',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   )),
               ],
@@ -940,4 +995,98 @@ class _ManageTeachersScreenState extends State<ManageTeachersScreen> {
       ],
     );
   }
+
+  void _showEditTeacherDialog(Map<String, dynamic> teacher) {
+    final nameController = TextEditingController(text: teacher['username'] ?? '');
+    final emailController = TextEditingController(text: teacher['email'] ?? '');
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Edit Teacher', style: TextStyle(fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Name',
+                        prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: emailController,
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: const Icon(Icons.email_outlined, size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() => isSaving = true);
+                          final result = await _classService.updateTeacherDetails(
+                            teacherId: teacher['id'],
+                            username: nameController.text.trim(),
+                            email: emailController.text.trim(),
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.pop(ctx);
+                          if (result['error'] != null) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(
+                                content: Text(result['error']),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Teacher updated successfully'),
+                                backgroundColor: Color(0xFF007C91),
+                              ),
+                            );
+                            _loadTeachers();
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _AppColors.tealDark,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
 }

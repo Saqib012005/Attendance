@@ -358,6 +358,80 @@ class ClassService {
     }
   }
 
+  /// Admin: Remove a student from a class (no teacher restriction)
+  Future<bool> adminRemoveStudentFromClass(int classId, int studentId) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.delete(
+        '/admin/classes/$classId/remove-student/$studentId/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error removing student: $e');
+      return false;
+    }
+  }
+
+  /// Admin: Create a new user (student or teacher)
+  Future<Map<String, dynamic>> adminCreateUser({
+    required String username,
+    required String email,
+    required String password,
+    required String role,
+    String? rollNo,
+  }) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.post(
+        '/admin/users/create/',
+        data: {
+          'username': username,
+          'email': email,
+          'password': password,
+          'role': role,
+          if (rollNo != null && rollNo.isNotEmpty) 'roll_no': rollNo,
+        },
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      return response.data;
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'error': e.response?.data['error'] ?? 'Failed to create user',
+      };
+    }
+  }
+
+  /// Admin: Permanently delete a user
+  Future<Map<String, dynamic>> adminDeleteUser(int userId) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.delete(
+        '/admin/users/$userId/delete/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      return response.data;
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'error': e.response?.data['error'] ?? 'Failed to delete user',
+      };
+    }
+  }
+
   /// Get student's enrolled classes
   Future<List<Map<String, dynamic>>> getStudentEnrolledClasses() async {
     try {
@@ -426,6 +500,120 @@ class ClassService {
     } catch (e) {
       print('Error updating student: $e');
       return false;
+    }
+  }
+
+  /// Admin: Update student's name, email, and roll number
+  Future<Map<String, dynamic>> updateStudentDetails({
+    required int studentId,
+    String? username,
+    String? email,
+    String? rollNo,
+  }) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.patch(
+        '/admin/students/$studentId/update/',
+        data: {
+          if (username != null) 'username': username,
+          if (email != null) 'email': email,
+          if (rollNo != null) 'roll_no': rollNo,
+        },
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      return response.data;
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'error': e.response?.data['error'] ?? 'Failed to update student',
+      };
+    }
+  }
+
+  /// Admin: Update teacher's name and email
+  Future<Map<String, dynamic>> updateTeacherDetails({
+    required int teacherId,
+    String? username,
+    String? email,
+  }) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.patch(
+        '/admin/teachers/$teacherId/update/',
+        data: {
+          if (username != null) 'username': username,
+          if (email != null) 'email': email,
+        },
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      return response.data;
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'error': e.response?.data['error'] ?? 'Failed to update teacher',
+      };
+    }
+  }
+
+  /// Admin: Update class details (code, name, semester)
+  Future<Map<String, dynamic>> updateClassDetails({
+    required int classId,
+    String? classCode,
+    String? className,
+    String? semester,
+  }) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.put(
+        '/admin/classes/$classId/update/',
+        data: {
+          if (classCode != null) 'class_code': classCode,
+          if (className != null) 'class_name': className,
+          if (semester != null) 'semester': semester,
+        },
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      return response.data;
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'error': e.response?.data['error'] ?? 'Failed to update class',
+      };
+    }
+  }
+
+  /// Admin: Get class details with enrolled students
+  Future<Map<String, dynamic>> getAdminClassDetail(int classId) async {
+    try {
+      final token = await _getToken();
+
+      final response = await _dio.get(
+        '/admin/classes/$classId/detail/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+
+      return {};
+    } catch (e) {
+      print('Error fetching admin class detail: $e');
+      return {};
     }
   }
 

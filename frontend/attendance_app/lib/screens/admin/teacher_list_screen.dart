@@ -221,6 +221,11 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
           ),
         ),
         IconButton(
+          icon: const Icon(Icons.person_add_alt_1_rounded, color: _AppColors.tealDark),
+          onPressed: _showAddTeacherDialog,
+          tooltip: 'Add Teacher',
+        ),
+        IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: _AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
           tooltip: 'Back',
@@ -357,13 +362,20 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
             ),
           const Icon(Icons.person_rounded, color: _AppColors.tealDark, size: 32),
           const SizedBox(width: 12),
-          Text(
-            'Teachers',
-            style: TextStyle(
-              fontSize: isMobile ? 22 : 28,
-              fontWeight: FontWeight.w700,
-              color: _AppColors.textPrimary,
+          Expanded(
+            child: Text(
+              'Teachers',
+              style: TextStyle(
+                fontSize: isMobile ? 22 : 28,
+                fontWeight: FontWeight.w700,
+                color: _AppColors.textPrimary,
+              ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_rounded, color: _AppColors.tealDark),
+            onPressed: _showAddTeacherDialog,
+            tooltip: 'Add Teacher',
           ),
         ],
       ),
@@ -590,11 +602,17 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
               ),
             ),
           ),
-          if (!isMobile)
+          if (!isMobile) ...[
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+              onPressed: () => _showDeleteTeacherDialog(teacher),
+              tooltip: 'Delete teacher',
+            ),
             IconButton(
               icon: const Icon(Icons.more_vert, color: _AppColors.textMuted),
               onPressed: () => _showAccessDialog(teacher),
             ),
+          ],
         ],
       ),
     );
@@ -685,6 +703,12 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
                       const Spacer(),
                       IconButton(
                         visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                        onPressed: () => _showDeleteTeacherDialog(teacher),
+                        tooltip: 'Delete teacher',
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.more_vert, color: _AppColors.textMuted),
                         onPressed: () => _showAccessDialog(teacher),
                       ),
@@ -725,6 +749,176 @@ class _TeacherListScreenState extends State<TeacherListScreen> {
               backgroundColor: hasAccess ? Colors.red : Colors.green,
             ),
             child: Text(hasAccess ? 'Revoke' : 'Grant'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddTeacherDialog() {
+    final nameController = TextEditingController();
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Add Teacher', style: TextStyle(fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Name',
+                        prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: const Icon(Icons.email_outlined, size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: 'Password (min 6 chars)',
+                        prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          final name = nameController.text.trim();
+                          final email = emailController.text.trim();
+                          final password = passwordController.text;
+
+                          if (name.isEmpty || email.isEmpty || password.isEmpty) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Name, email, and password are required'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() => isSaving = true);
+                          final result = await _classService.adminCreateUser(
+                            username: name,
+                            email: email,
+                            password: password,
+                            role: 'teacher',
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.pop(ctx);
+                          if (result['error'] != null) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(
+                                content: Text(result['error']),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Teacher created successfully'),
+                                backgroundColor: _AppColors.tealDark,
+                              ),
+                            );
+                            _loadTeachers();
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _AppColors.tealDark,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Create'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showDeleteTeacherDialog(Map<String, dynamic> teacher) {
+    final name = teacher['full_name'] ?? teacher['username'] ?? 'Unknown';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Teacher', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Permanently delete $name?\n\nAll their data will be removed. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final result = await _classService.adminDeleteUser(teacher['id']);
+              if (!mounted) return;
+              if (result['error'] != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result['error']),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result['message'] ?? 'Teacher deleted'),
+                    backgroundColor: _AppColors.tealDark,
+                  ),
+                );
+                _loadTeachers();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
           ),
         ],
       ),

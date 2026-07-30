@@ -195,7 +195,10 @@ def admin_semester_students(request, semester):
                     'roll_no': roll_no,
                     'classes': [],
                 }
-            students_map[student.id]['classes'].append(cls.class_code)
+            students_map[student.id]['classes'].append({
+                'id': cls.id,
+                'class_code': cls.class_code,
+            })
 
     students_list = list(students_map.values())
 
@@ -232,6 +235,7 @@ def admin_teachers_list(request):
         classes_list = []
         for cls in teacher.classes_taught.all():
             classes_list.append({
+                'id': cls.id,
                 'class_code': cls.class_code,
                 'class_name': cls.class_name,
                 'student_count': cls.student_count,
@@ -249,6 +253,64 @@ def admin_teachers_list(request):
     return Response({
         'teachers': result,
         'total_teachers': len(result),
+    })
+
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_update_teacher(request, teacher_id):
+    """Admin: Update teacher's name and email"""
+    user = request.user
+
+    if user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can update teachers'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        teacher = User.objects.get(id=teacher_id, role='teacher')
+    except User.DoesNotExist:
+        return Response(
+            {'error': 'Teacher not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    username = request.data.get('username')
+    email = request.data.get('email')
+
+    if username is not None:
+        username = username.strip()
+        if not username:
+            return Response(
+                {'error': 'Name cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        teacher.username = username
+
+    if email is not None:
+        email = email.strip().lower()
+        if not email:
+            return Response(
+                {'error': 'Email cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if User.objects.filter(email=email).exclude(id=teacher_id).exists():
+            return Response(
+                {'error': 'Email already in use by another user'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        teacher.email = email
+
+    teacher.save()
+
+    return Response({
+        'message': 'Teacher updated successfully',
+        'teacher': {
+            'id': teacher.id,
+            'username': teacher.username,
+            'email': teacher.email,
+        }
     })
 
 
@@ -337,6 +399,107 @@ def admin_toggle_user_access(request, user_id):
         'email': target.email,
         'role': target.role,
         'is_active': target.is_active,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_create_user(request):
+    """Admin: Create a new user (student or teacher)"""
+    user = request.user
+
+    if user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can create users'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    username = request.data.get('username', '').strip()
+    email = request.data.get('email', '').strip().lower()
+    password = request.data.get('password', '')
+    role = request.data.get('role', '')
+    roll_no = request.data.get('roll_no', '').strip()
+
+    if not username:
+        return Response({'error': 'Name is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if not email:
+        return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if not password or len(password) < 6:
+        return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+    if role not in ('student', 'teacher'):
+        return Response({'error': 'Role must be student or teacher'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(email=email).exists():
+        return Response({'error': 'Email already in use'}, status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(username=username).exists():
+        return Response({'error': 'Username already taken'}, status=status.HTTP_400_BAD_REQUEST)
+
+    new_user = User(
+        username=username,
+        email=email,
+        role=role,
+    )
+    new_user.set_password(password)
+    new_user.save()
+
+    if role == 'student':
+        if not roll_no:
+            roll_no = f'STU-{new_user.id}'
+        StudentProfile.objects.create(student=new_user, roll_no=roll_no)
+
+    return Response({
+        'message': f'{role.capitalize()} created successfully',
+        'user': {
+            'id': new_user.id,
+            'username': new_user.username,
+            'email': new_user.email,
+            'role': new_user.role,
+            'roll_no': roll_no if role == 'student' else None,
+        }
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_delete_user(request, user_id):
+    """Admin: Permanently delete a user"""
+    user = request.user
+
+    if user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can delete users'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        target = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': 'User not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if target == user:
+        return Response(
+            {'error': 'You cannot delete yourself'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if target.role == 'teacher':
+        from django.db.models import Count
+        class_count = target.classes_taught.count()
+        if class_count > 0:
+            return Response(
+                {'error': f'Teacher still has {class_count} class(es) assigned. Reassign or delete classes first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    username = target.username
+    role = target.role
+    target.delete()
+
+    return Response({
+        'message': f'{role.capitalize()} "{username}" deleted permanently',
     })
 
 
@@ -448,6 +611,123 @@ def class_detail(request, class_id):
         return Response({
             'message': f'Class "{class_name}" deleted successfully'
         }, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['PUT'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_update_class(request, class_id):
+    """Admin: Update class details (code, name, semester)"""
+    user = request.user
+
+    if user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can update classes'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        class_obj = Class.objects.get(id=class_id)
+    except Class.DoesNotExist:
+        return Response(
+            {'error': 'Class not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    class_code = request.data.get('class_code')
+    class_name = request.data.get('class_name')
+    semester = request.data.get('semester')
+
+    if class_code is not None:
+        class_code = class_code.strip()
+        if not class_code:
+            return Response(
+                {'error': 'Class code cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if Class.objects.filter(class_code=class_code).exclude(id=class_id).exists():
+            return Response(
+                {'error': 'Class code already exists'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        class_obj.class_code = class_code
+
+    if class_name is not None:
+        class_name = class_name.strip()
+        if not class_name:
+            return Response(
+                {'error': 'Class name cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        class_obj.class_name = class_name
+
+    if semester is not None:
+        semester = semester.strip()
+        if not semester:
+            return Response(
+                {'error': 'Semester cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        class_obj.semester = semester
+
+    class_obj.save()
+
+    return Response({
+        'message': 'Class updated successfully',
+        'class': {
+            'id': class_obj.id,
+            'class_code': class_obj.class_code,
+            'class_name': class_obj.class_name,
+            'semester': class_obj.semester,
+            'student_count': class_obj.student_count,
+        }
+    })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_class_detail(request, class_id):
+    """Admin: Get class details with enrolled students"""
+    user = request.user
+
+    if user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can access this endpoint'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        class_obj = Class.objects.get(id=class_id)
+    except Class.DoesNotExist:
+        return Response(
+            {'error': 'Class not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    enrollments = class_obj.enrollments.select_related('student__student_profile')
+    students_list = []
+    for enrollment in enrollments:
+        student = enrollment.student
+        try:
+            profile = student.student_profile
+            roll_no = profile.roll_no
+        except StudentProfile.DoesNotExist:
+            roll_no = 'N/A'
+        students_list.append({
+            'id': student.id,
+            'username': student.username,
+            'email': student.email,
+            'roll_no': roll_no,
+        })
+
+    return Response({
+        'id': class_obj.id,
+        'class_code': class_obj.class_code,
+        'class_name': class_obj.class_name,
+        'semester': class_obj.semester,
+        'teacher_name': class_obj.teacher_name,
+        'student_count': len(students_list),
+        'students': students_list,
+    })
 
 
 @api_view(['GET'])
@@ -660,6 +940,43 @@ def remove_student_from_class(request, class_id, student_id):
             'message': f'Student {student_username} removed from class'
         }, status=status.HTTP_200_OK)
     
+    except Enrollment.DoesNotExist:
+        return Response(
+            {'error': 'Student not found in this class'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_remove_student_from_class(request, class_id, student_id):
+    """Admin: Remove a student from a class"""
+    user = request.user
+
+    if user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can perform this action'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        class_obj = Class.objects.get(id=class_id)
+    except Class.DoesNotExist:
+        return Response(
+            {'error': 'Class not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    try:
+        enrollment = Enrollment.objects.get(
+            class_obj=class_obj,
+            student_id=student_id
+        )
+        student_username = enrollment.student.username
+        enrollment.delete()
+        return Response({
+            'message': f'Student {student_username} removed from class'
+        }, status=status.HTTP_200_OK)
     except Enrollment.DoesNotExist:
         return Response(
             {'error': 'Student not found in this class'},
@@ -1109,6 +1426,76 @@ def update_student_in_class(request, class_id, student_id):
     except Enrollment.DoesNotExist:
         return Response({'error': 'Student not enrolled'}, status=status.HTTP_404_NOT_FOUND)
 
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_update_student(request, student_id):
+    """Admin: Update student's name, email, and roll number"""
+    user = request.user
+
+    if user.role != 'admin':
+        return Response(
+            {'error': 'Only admins can update students'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        student = User.objects.get(id=student_id, role='student')
+    except User.DoesNotExist:
+        return Response(
+            {'error': 'Student not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    username = request.data.get('username')
+    email = request.data.get('email')
+    roll_no = request.data.get('roll_no')
+
+    if username is not None:
+        username = username.strip()
+        if not username:
+            return Response(
+                {'error': 'Name cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        student.username = username
+
+    if email is not None:
+        email = email.strip().lower()
+        if not email:
+            return Response(
+                {'error': 'Email cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if User.objects.filter(email=email).exclude(id=student_id).exists():
+            return Response(
+                {'error': 'Email already in use by another user'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        student.email = email
+
+    student.save()
+
+    if roll_no is not None:
+        roll_no = roll_no.strip()
+        profile, created = StudentProfile.objects.get_or_create(student=student)
+        if StudentProfile.objects.filter(roll_no=roll_no).exclude(student=student).exists():
+            return Response(
+                {'error': 'Roll number already exists'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        profile.roll_no = roll_no
+        profile.save()
+
+    return Response({
+        'message': 'Student updated successfully',
+        'student': {
+            'id': student.id,
+            'username': student.username,
+            'email': student.email,
+            'roll_no': roll_no or (student.student_profile.roll_no if hasattr(student, 'student_profile') else 'N/A'),
+        }
+    })
 
 
 @api_view(['GET'])
