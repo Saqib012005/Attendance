@@ -3,7 +3,7 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "backend/Dockerfile",
-    "watchPatterns": ["backend/**"]
+    "watchPatterns": ["backend/**", "railway.json"]
   },
   "deploy": {
     "startCommand": "sh -c 'python manage.py migrate && gunicorn attend_backend.wsgi:application --bind 0.0.0.0:$PORT'",
