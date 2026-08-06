@@ -6,7 +6,7 @@
     "watchPatterns": ["backend/**"]
   },
   "deploy": {
-    "startCommand": "cd backend && python manage.py migrate && gunicorn attend_backend.wsgi:application --bind 0.0.0.0:$PORT",
+    "startCommand": "sh -c 'python manage.py migrate && gunicorn attend_backend.wsgi:application --bind 0.0.0.0:$PORT'",
     "restartPolicyType": "ON_FAILURE"
   }
 }
