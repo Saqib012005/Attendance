@@ -7,7 +7,7 @@ class ApiConfig {
   static const String _apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 
   // Local defaults
-  static const String _computerBaseUrl = 'http://localhost:8000/api/v1';
+  static const String _computerBaseUrl = 'https://attendance-production-5fb3.up.railway.app/api/v1';
 
   static String get baseUrl {
     if (_apiBaseUrl.isNotEmpty) {
