@@ -6,6 +6,7 @@ import '../student/my_classes_screen.dart';
 import '../student/qr_scanner_screen.dart';
 import '../student/attendance_history_screen.dart';
 import '../student/student_profile_screen.dart';
+import '../../services/offline_sync_service.dart';
 
 class StudentDashboardPage extends StatefulWidget {
   const StudentDashboardPage({super.key});
@@ -24,6 +25,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
   bool isLoading = true;
   int totalClasses = 0;
   double attendanceRate = 0.0;  
+  int offlineRecordsCount = 0;
 
   // Cache management
   Map<String, dynamic>? _cachedUserData;
@@ -100,6 +102,8 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
       
       // Fetch student's attendance statistics
       final stats = await _profileService.getStudentStats();
+      
+      final offlineRecords = await OfflineSyncService().getOfflineRecords();
 
       if (!mounted) return;
 
@@ -120,6 +124,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
         // Set real data from backend
         totalClasses = classes.length;
         attendanceRate = rate; 
+        offlineRecordsCount = offlineRecords.length;
         
         isLoading = false;
       });
@@ -251,6 +256,28 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                         children: [
                           if (isDesktop) _buildTopBar(false),
                           if (isDesktop) const SizedBox(height: 24),
+                          if (offlineRecordsCount > 0)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.orange.shade300),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.wifi_off, color: Colors.orange.shade800),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      '$offlineRecordsCount attendance record(s) saved offline. They will sync automatically when connected.',
+                                      style: TextStyle(color: Colors.orange.shade900),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           _buildStatsSection(isMobile),
                           const SizedBox(height: 24),
                           _buildSectionHeader(isMobile),

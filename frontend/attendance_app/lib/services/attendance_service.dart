@@ -2,15 +2,17 @@ import 'package:dio/dio.dart';
 
 import '../config/api_config.dart';
 import 'storage_service.dart';
+import 'offline_sync_service.dart';
 
 class AttendanceService {
   final Dio _dio = Dio();
-  
+  late final OfflineSyncService _offlineSyncService;
 
   AttendanceService() {
     _dio.options.baseUrl = ApiConfig.baseUrl;
     _dio.options.connectTimeout = const Duration(seconds: 10);
     _dio.options.receiveTimeout = const Duration(seconds: 10);
+    _offlineSyncService = OfflineSyncService();
   }
 
   Future<String?> _getToken() async {
@@ -18,7 +20,7 @@ class AttendanceService {
   }
 
   /// Mark attendance by scanning QR code
-  Future<Map<String, dynamic>> markAttendance(String sessionId) async {
+  Future<Map<String, dynamic>> markAttendance(String sessionId, {bool isSync = false}) async {
     try {
       final token = await _getToken();
       
@@ -51,11 +53,39 @@ class AttendanceService {
           'message': errorMessage,
         };
       }
+      
+      if (!isSync) {
+        // Save offline
+        try {
+          await _offlineSyncService.saveOfflineRecord(sessionId);
+          return {
+            'success': true,
+            'message': 'Saved offline. Will sync when connected.',
+            'offline': true,
+          };
+        } catch (syncErr) {
+          print('Failed to save offline: $syncErr');
+        }
+      }
+      
       return {
         'success': false,
         'message': 'Network error: ${e.message}',
       };
     } catch (e) {
+      if (!isSync) {
+        // Save offline
+        try {
+          await _offlineSyncService.saveOfflineRecord(sessionId);
+          return {
+            'success': true,
+            'message': 'Saved offline. Will sync when connected.',
+            'offline': true,
+          };
+        } catch (syncErr) {
+          print('Failed to save offline: $syncErr');
+        }
+      }
       return {
         'success': false,
         'message': 'Unexpected error: $e',
