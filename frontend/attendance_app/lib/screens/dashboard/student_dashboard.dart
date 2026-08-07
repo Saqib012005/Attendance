@@ -91,7 +91,9 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
 
     if (!mounted) return;
 
-    setState(() => isLoading = true);
+    if (_cachedUserData == null) {
+      setState(() => isLoading = true);
+    }
 
     try {
       // Fetch user profile data

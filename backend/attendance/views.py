@@ -425,6 +425,13 @@ def create_session(request):
     
     class_id = serializer.validated_data['class_id']
     duration_minutes = serializer.validated_data['duration_minutes']
+    reference_image = request.FILES.get('reference_image')
+
+    class_type = serializer.validated_data.get('class_type', 'online')
+    board_type = serializer.validated_data.get('board_type', 'whiteboard')
+    
+    # Reference image is uploaded later for offline sessions via a separate endpoint.
+    # Online sessions don't require it at all.
     
     try:
         class_obj = Class.objects.get(id=class_id, teacher=user)
@@ -441,6 +448,16 @@ def create_session(request):
     # Generate session UUID
     session_uuid = uuid.uuid4()
     
+    import random
+    import string
+    
+    instruction_card = None
+    if class_type == 'offline':
+        from attendance.verification import generate_shape_combo
+        shape_combo, instruction_card, pattern_code = generate_shape_combo()
+    else:
+        pattern_code = None
+    
     # Create QR code data (JSON string)
     qr_data = {
         'session_id': str(session_uuid),
@@ -452,6 +469,9 @@ def create_session(request):
         'start_time': start_time.isoformat(),
         'end_time': end_time.isoformat(),
         'duration': duration_minutes,
+        'class_type': class_type,
+        'board_type': board_type,
+        'pattern_code': pattern_code
     }
     
     # Create session
@@ -462,6 +482,12 @@ def create_session(request):
         duration_minutes=duration_minutes,
         end_time=end_time,
         qr_code_data=json.dumps(qr_data),
+        reference_image=reference_image,
+        class_type=class_type,
+        board_type=board_type,
+        pattern_code=pattern_code,
+        instruction_card=instruction_card,
+        shape_data=shape_combo,
         status='active'
     )
     
@@ -497,6 +523,46 @@ def get_active_sessions(request):
         'total': sessions.count()
     })
 
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_student_active_sessions(request):
+    """Get all active sessions for classes the student is enrolled in"""
+    user = request.user
+    
+    if user.role != 'student':
+        return Response(
+            {'error': 'Only students can view these sessions'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Get enrolled classes
+    enrolled_classes = Enrollment.objects.filter(student=user).values_list('class_obj_id', flat=True)
+    
+    # Get active sessions for those classes
+    sessions = AttendanceSession.objects.filter(
+        class_obj_id__in=enrolled_classes,
+        status='active',
+        end_time__gt=timezone.now()
+    ).select_related('class_obj', 'teacher')
+    
+    sessions_data = []
+    for session in sessions:
+        data = {
+            'session_id': str(session.session_id),
+            'class_code': session.class_obj.class_code,
+            'class_name': session.class_obj.class_name,
+            'class_type': session.class_type,
+            'pattern_code': session.pattern_code,
+            'has_reference_image': bool(session.reference_image),
+            'end_time': session.end_time,
+            'status': session.status,
+        }
+        sessions_data.append(data)
+
+    return Response({
+        'sessions': sessions_data,
+        'total': len(sessions_data)
+    })
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -592,6 +658,175 @@ def mark_attendance(request, session_id):
         'marked_at': record.marked_at,
         'status': 'present'
     }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def upload_reference_image(request, session_id):
+    """Teacher uploads the reference pattern image for offline session"""
+    user = request.user
+    
+    if user.role != 'teacher':
+        return Response(
+            {'error': 'Only teachers can upload reference images'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+        
+    try:
+        session = AttendanceSession.objects.get(
+            session_id=session_id,
+            teacher=user
+        )
+    except AttendanceSession.DoesNotExist:
+        return Response(
+            {'error': 'Session not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
+    if 'reference_image' not in request.FILES:
+        return Response(
+            {'error': 'No image provided'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    ref_file = request.FILES['reference_image']
+    
+    from attendance.verification import verify_teacher_reference
+    
+    try:
+        ref_bytes = ref_file.read()
+        ref_file.seek(0) # Reset pointer so Django can save it
+        
+        success, message = verify_teacher_reference(ref_bytes, session.pattern_code, session.shape_data)
+        if not success:
+            return Response(
+                {'error': message},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to process image: {str(e)}'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    session.reference_image = ref_file
+    session.save()
+    
+    return Response({
+        'message': 'Reference image verified and uploaded successfully'
+    })
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def verify_image(request):
+    """Student verifies attendance with a live photo and focal distance."""
+    user = request.user
+
+    if user.role != 'student':
+        return Response(
+            {'error': 'Only students can verify attendance'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    session_id = request.data.get('session_id')
+    focal_distance = request.data.get('focal_distance')
+    student_image = request.FILES.get('student_image')
+    
+    flash_fired_str = request.data.get('flash_fired', 'false').lower()
+    flash_fired = flash_fired_str in ['true', '1', 'yes']
+
+    if not session_id:
+        return Response({'error': 'session_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if student_image is None:
+        return Response({'error': 'student_image is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        session = AttendanceSession.objects.get(session_id=session_id)
+    except AttendanceSession.DoesNotExist:
+        return Response(
+            {'error': 'Session not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if session.status != 'active':
+        return Response({'error': 'This session has ended'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not session.is_active:
+        return Response(
+            {'error': f'Session expired at {session.end_time.strftime("%I:%M %p")}'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not Enrollment.objects.filter(class_obj=session.class_obj, student=user).exists():
+        return Response(
+            {'error': f'You are not enrolled in {session.class_obj.class_code}'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        if session.class_type == 'offline':
+            if not session.pattern_code:
+                return Response(
+                    {'error': 'Session has no pattern code for verification'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if not session.reference_image:
+                return Response(
+                    {'error': 'Teacher has not uploaded the reference image yet'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        existing_record = AttendanceRecord.objects.filter(session=session, student=user).first()
+        if existing_record:
+            if existing_record.status == 'pending_review':
+                # Allow the student to retry scanning if their previous attempt failed verification
+                existing_record.delete()
+            else:
+                return Response({
+                    'error': 'Attendance already marked',
+                    'marked_at': existing_record.marked_at,
+                    'status': existing_record.status
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        from attendance.verification import verify_offline_code, validate_focal_distance
+        
+        is_valid_distance, distance_result = validate_focal_distance(focal_distance)
+        if not is_valid_distance:
+            return Response({'error': distance_result}, status=status.HTTP_400_BAD_REQUEST)
+
+        matched, final_score, reasons = verify_offline_code(
+            session.pattern_code, session.reference_image, student_image, session.board_type, flash_fired
+        )
+        
+        status_val = 'present' if matched else 'pending_review'
+
+        record = AttendanceRecord.objects.create(
+            session=session,
+            student=user,
+            status=status_val,
+            verification_score=final_score,
+            verification_reasons=json.dumps(reasons)
+        )
+
+        if not matched:
+            return Response({
+                'status': 'fail',
+                'score': final_score,
+                'reasons': reasons,
+                'error': f'Verification failed. Reasons: {", ".join(reasons)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'status': 'pass',
+            'score': final_score,
+            'message': f'Attendance verified for {session.class_obj.class_code}',
+            'focal_distance': distance_result,
+            'marked_at': record.marked_at,
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        import traceback
+        return Response({'error': f"Backend Error: {str(e)}", 'trace': traceback.format_exc()}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])

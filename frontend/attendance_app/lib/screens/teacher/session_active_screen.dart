@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/session_service.dart';
+import '../common/custom_camera_screen.dart';
+import '../../widgets/pattern_painter.dart';
 
 class SessionActiveScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
@@ -27,6 +30,11 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
   List<Map<String, dynamic>> students = [];
   Map<String, dynamic> statistics = {};
   bool isLoading = true;
+  bool isUploadingReference = false;
+  String? referenceImagePath;
+
+
+  static const _channel = MethodChannel('attendance_app/camera');
 
   @override
   void initState() {
@@ -382,7 +390,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Active Session: ${widget.sessionData['class_code']}',
+              'Active Session: ${widget.sessionData['class_code']}${widget.sessionData['class_type'] == 'offline' ? ' (Offline Mode)' : ''}',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             Text(
@@ -391,8 +399,9 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
             ),
           ],
         ),
-        backgroundColor: const Color(0xFF007C91),
+        backgroundColor: const Color(0xFF00838f),
         foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -426,7 +435,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
             const SizedBox(height: 16),
             _buildStatisticsCard(),
             const SizedBox(height: 16),
-            _buildStudentsList(),
+            _buildStudentsList(isMobile: true),
           ],
         ),
       ),
@@ -465,7 +474,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
         // RIGHT SIDE - Students List
         Expanded(
           flex: isDesktop ? 3 : 4,
-          child: _buildStudentsList(),
+          child: _buildStudentsList(isMobile: false),
         ),
       ],
     );
@@ -473,36 +482,35 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
 
   Widget _buildTimerCard() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: remainingSeconds > 60
-              ? [const Color(0xFF007C91), const Color(0xFF0097A7)]
-              : [Colors.orange.shade600, Colors.deepOrange.shade700],
-        ),
-        borderRadius: BorderRadius.circular(16),
+        color: remainingSeconds > 60
+            ? const Color(0xFF00838f)
+            : Colors.orange.shade700,
+        borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
             color: (remainingSeconds > 60
-                    ? const Color(0xFF007C91)
+                    ? const Color(0xFF00838f)
                     : Colors.orange)
                 .withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.timer, color: Colors.white, size: 32),
-          const SizedBox(width: 16),
+          const Icon(Icons.timer, color: Colors.white, size: 24),
+          const SizedBox(width: 12),
           Text(
             _formatTime(remainingSeconds),
             style: const TextStyle(
-              fontSize: 48,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: Colors.white,
+              letterSpacing: 1,
             ),
           ),
         ],
@@ -510,7 +518,50 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
     );
   }
 
+  Future<void> _uploadReferenceImage() async {
+    String? imagePath;
+    try {
+      imagePath = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const CustomCameraScreen(
+            title: 'Capture Reference Board',
+            helperText: 'Capture the entire whiteboard with the drawn pattern clearly visible.',
+          ),
+        ),
+      );
+    } catch (e) {
+      _showErrorSnackBar('Camera error: $e');
+      return;
+    }
+
+    if (imagePath == null) return;
+    
+    setState(() => isUploadingReference = true);
+    
+    try {
+      final result = await _sessionService.uploadReferenceImage(
+        widget.sessionData['session_id'],
+        imagePath,
+      );
+      
+      if (result['success'] == true) {
+        setState(() => referenceImagePath = imagePath);
+        _showSuccessSnackBar('Reference image uploaded successfully');
+      } else {
+        _showErrorSnackBar(result['message'] ?? 'Upload failed');
+      }
+    } catch (e) {
+      _showErrorSnackBar('Upload error: $e');
+    } finally {
+      setState(() => isUploadingReference = false);
+    }
+  }
+
   Widget _buildQRSection({required double size}) {
+    final isOffline = widget.sessionData['class_type'] == 'offline';
+    final patternCode = widget.sessionData['pattern_code'] ?? '??';
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -527,30 +578,128 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
       ),
       child: Column(
         children: [
-          QrImageView(
-            data: widget.qrCodeData,
-            version: QrVersions.auto,
-            size: size,
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF007C91),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            "Scan to Mark Attendance",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1F2937),
+          if (isOffline) ...[
+            if (widget.sessionData['shape_data'] != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF22C55E), width: 2),
+                ),
+                child: SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: CustomPaint(
+                    painter: PatternPainter(
+                      shapeData: widget.sessionData['shape_data'] as Map<String, dynamic>,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF22C55E), width: 2),
+                ),
+                child: Text(
+                  patternCode,
+                  style: const TextStyle(
+                    fontSize: 42,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 8,
+                    color: Color(0xFF166534),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            const Text(
+              "Draw this exactly on the board",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.redAccent,
+              ),
             ),
-          ),
+            const SizedBox(height: 24),
+            InkWell(
+              onTap: isUploadingReference ? null : _uploadReferenceImage,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF007C91),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF007C91).withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: isUploadingReference
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Icon(referenceImagePath != null ? Icons.check : Icons.upload, color: Colors.white, size: 28),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Take a photo of the board",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+          ] else ...[
+            QrImageView(
+              data: widget.qrCodeData,
+              version: QrVersions.auto,
+              size: size,
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF00838f),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Scan to Mark Attendance",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           Text(
-            "Session ID: ${widget.sessionData['session_id'].toString().substring(0, 8)}...",
+            "Session ID: ${widget.sessionData['session_id'].toString().substring(0, 8)}......",
             style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+              fontSize: 13,
+              color: Colors.grey[500],
             ),
           ),
+          if (isOffline) ...[
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 32),
+                  color: const Color(0xFF007C91),
+                  onPressed: () => _fetchAttendanceData(),
+                ),
+                const SizedBox(width: 48),
+                IconButton(
+                  icon: const Icon(Icons.stop_circle, size: 32),
+                  color: const Color(0xFF007C91),
+                  onPressed: _endSession,
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -638,7 +787,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
     );
   }
 
-  Widget _buildStudentsList() {
+  Widget _buildStudentsList({bool isMobile = false}) {
     if (students.isEmpty) {
       return const Center(
         child: Text('No students enrolled in this class'),
@@ -646,6 +795,8 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
     }
 
     return ListView.builder(
+      shrinkWrap: isMobile,
+      physics: isMobile ? const NeverScrollableScrollPhysics() : null,
       padding: const EdgeInsets.all(16),
       itemCount: students.length,
       itemBuilder: (context, index) {
@@ -654,23 +805,24 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
         final hasRecord = student['has_record'] == true;
 
         return Card(
+          color: isPresent ? Colors.white : const Color(0xFFFFF0F0),
           margin: const EdgeInsets.only(bottom: 12),
-          elevation: 2,
+          elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(
-              color: isPresent ? Colors.green : Colors.red.shade200,
-              width: 2,
+              color: isPresent ? Colors.grey.shade200 : const Color(0xFFFFCDCD),
+              width: 1,
             ),
           ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             leading: CircleAvatar(
               radius: 24,
-              backgroundColor: isPresent ? Colors.green : Colors.red,
+              backgroundColor: isPresent ? Colors.green.shade100 : Colors.red.shade100,
               child: Icon(
-                isPresent ? Icons.check_circle : Icons.cancel,
-                color: Colors.white,
+                isPresent ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                color: isPresent ? Colors.green : Colors.red,
                 size: 28,
               ),
             ),
@@ -711,7 +863,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
                             student['id'],
                             'present',
                           ),
-                  icon: const Icon(Icons.check_circle),
+                  icon: const Icon(Icons.check_circle_rounded),
                   color: Colors.green,
                   tooltip: 'Mark Present',
                   style: IconButton.styleFrom(
@@ -729,7 +881,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
                             student['id'],
                             'absent',
                           ),
-                  icon: const Icon(Icons.cancel),
+                  icon: const Icon(Icons.cancel_rounded),
                   color: Colors.red,
                   tooltip: 'Mark Absent',
                   style: IconButton.styleFrom(
@@ -745,4 +897,5 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
       },
     );
   }
+
 }

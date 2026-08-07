@@ -88,7 +88,9 @@ class _TeacherDashboardPageState extends State<TeacherDashboardPage>
 
     if (!mounted) return;
 
-    setState(() => isLoading = true);
+    if (_cachedUserData == null) {
+      setState(() => isLoading = true);
+    }
 
     try {
       final userData = await _authService.getCurrentUser();
