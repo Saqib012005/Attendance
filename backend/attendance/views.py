@@ -1419,3 +1419,27 @@ def join_class(request):
             return Response({'message': f'Successfully joined {class_obj.class_name}'}, status=status.HTTP_200_OK)
             
     return Response({'message': f'Successfully joined {class_obj.class_name}'}, status=status.HTTP_201_CREATED)
+
+from django.http import HttpResponse
+
+def join_fallback(request, code):
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<title>Join Class</title>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<script>
+  window.location.href = 'attendapp://join/{code}';
+</script>
+<style>
+  body {{ font-family: sans-serif; text-align: center; padding: 50px; background: #E0F7FA; }}
+  .btn {{ display: inline-block; padding: 14px 28px; background: #007C91; color: white; text-decoration: none; border-radius: 12px; font-weight: bold; margin-top: 30px; font-size: 18px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+</style>
+</head>
+<body>
+  <h2>Opening Attendance App...</h2>
+  <p>If the app didn't open automatically, please tap the button below.</p>
+  <a href='attendapp://join/{code}' class='btn'>Open in App</a>
+</body>
+</html>"""
+    return HttpResponse(html)

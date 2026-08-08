@@ -336,7 +336,7 @@ class _AddStudentsScreenState extends State<AddStudentsScreen> {
   }
 
   Widget _buildShareLinkTab() {
-    final shareUrl = 'https://attendance.app/join/${widget.classCode}';
+    final shareUrl = 'https://attendance-production-5fb3.up.railway.app/join/${widget.classCode}';
     return Center(
       child: SingleChildScrollView(
         child: Container(
@@ -391,7 +391,7 @@ class _AddStudentsScreenState extends State<AddStudentsScreen> {
                     IconButton(
                       icon: const Icon(Icons.copy_rounded, color: Color(0xFF007C91)),
                       onPressed: () {
-                        Clipboard.setData(ClipboardData(text: 'https://attendance.app/join/${widget.classCode}'));
+                        Clipboard.setData(ClipboardData(text: 'https://attendance-production-5fb3.up.railway.app/join/${widget.classCode}'));
                         _showSuccessSnackBar('Link copied to clipboard!');
                       },
                     ),
@@ -404,7 +404,7 @@ class _AddStudentsScreenState extends State<AddStudentsScreen> {
                 height: 54,
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    Share.share('Join my class ${widget.className} on the Attendance App: https://attendance.app/join/${widget.classCode}');
+                    Share.share('Join my class ${widget.className} on the Attendance App: https://attendance-production-5fb3.up.railway.app/join/${widget.classCode}');
                   },
                   icon: const Icon(Icons.send_rounded, color: Colors.white),
                   label: const Text(

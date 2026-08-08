@@ -87,18 +87,26 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
   }
 
   void _handleDeepLink(Uri uri) {
+    String? classCode;
+    
+    // Handle https://attendance-production-5fb3.up.railway.app/join/CODE
     if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'join') {
-      final classCode = uri.pathSegments[1];
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => StudentMyClassesScreen(initialJoinCode: classCode),
-          ),
-        ).then((_) {
-          _loadUserData(forceRefresh: true);
-        });
-      }
+      classCode = uri.pathSegments[1];
+    } 
+    // Handle attendapp://join/CODE (where host is 'join' and path is '/CODE')
+    else if (uri.scheme == 'attendapp' && uri.host == 'join' && uri.pathSegments.isNotEmpty) {
+      classCode = uri.pathSegments[0];
+    }
+    
+    if (classCode != null && mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => StudentMyClassesScreen(initialJoinCode: classCode),
+        ),
+      ).then((_) {
+        _loadUserData(forceRefresh: true);
+      });
     }
   }
 

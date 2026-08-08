@@ -33,6 +33,7 @@ from attendance.views import (
     get_student_active_sessions,
     get_pending_classes,
     join_class,
+    join_fallback,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.views.static import serve as static_serve
@@ -92,6 +93,9 @@ urlpatterns = [
 
     # Utility
     path('api/v1/ping/', ping, name='ping'),
+
+    # Deep Link Fallback
+    path('join/<str:code>/', join_fallback, name='join_fallback'),
 
     # Flutter Web — must be last
     re_path(r'^(?P<path>.*)$', serve_flutter, name='flutter_web'),
