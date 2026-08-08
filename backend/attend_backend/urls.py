@@ -94,8 +94,8 @@ urlpatterns = [
     # Utility
     path('api/v1/ping/', ping, name='ping'),
 
-    # Deep Link Fallback
-    path('join/<str:code>/', join_fallback, name='join_fallback'),
+    # Deep Link Fallback (handles with or without trailing slash)
+    re_path(r'^join/(?P<code>[^/]+)/?$', join_fallback, name='join_fallback'),
 
     # Flutter Web — must be last
     re_path(r'^(?P<path>.*)$', serve_flutter, name='flutter_web'),
