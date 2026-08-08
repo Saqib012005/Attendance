@@ -246,7 +246,7 @@ class _JoinClassDialogState extends State<_JoinClassDialog> {
   @override
   void initState() {
     super.initState();
-    _codeController = TextEditingController(text: widget.prefillCode ?? '');
+    _codeController = TextEditingController(text: widget.classData?['class_code'] ?? widget.prefillCode ?? '');
   }
 
   Future<void> _submitCode() async {
@@ -321,33 +321,37 @@ class _JoinClassDialogState extends State<_JoinClassDialog> {
                 const SizedBox(height: 8),
                 Text(
                   widget.classData != null 
-                    ? 'Enter the code for ${widget.classData!['class_name']}'
-                    : 'Enter the code shared by your teacher',
+                    ? 'Do you want to join ${widget.classData!['class_name']}?'
+                    : (widget.prefillCode != null 
+                        ? 'Do you want to join this class?'
+                        : 'Enter the code shared by your teacher'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.8),
-                    fontSize: 14,
+                    fontSize: 16,
                   ),
                 ),
                 const SizedBox(height: 24),
-                TextField(
-                  controller: _codeController,
-                  style: const TextStyle(color: Colors.white, fontSize: 18, letterSpacing: 2),
-                  textAlign: TextAlign.center,
-                  decoration: InputDecoration(
-                    hintText: 'CLASS CODE',
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.4), letterSpacing: 2),
-                    filled: true,
-                    fillColor: Colors.black.withOpacity(0.2),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
+                if (widget.classData == null && widget.prefillCode == null)
+                  TextField(
+                    controller: _codeController,
+                    style: const TextStyle(color: Colors.white, fontSize: 18, letterSpacing: 2),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: 'CLASS CODE',
+                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.4), letterSpacing: 2),
+                      filled: true,
+                      fillColor: Colors.black.withOpacity(0.2),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      errorText: _errorMessage,
+                      errorStyle: const TextStyle(color: Colors.redAccent),
                     ),
-                    errorText: _errorMessage,
-                    errorStyle: const TextStyle(color: Colors.redAccent),
                   ),
-                ),
-                const SizedBox(height: 24),
+                if (widget.classData == null && widget.prefillCode == null)
+                  const SizedBox(height: 24),
                 Row(
                   children: [
                     Expanded(
