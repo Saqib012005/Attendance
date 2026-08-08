@@ -79,7 +79,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     });
 
     // Handle incoming links when app is launched from terminated state
-    _appLinks.getInitialAppLink().then((uri) {
+    _appLinks.getInitialLink().then((uri) {
       if (uri != null) {
         _handleDeepLink(uri);
       }
