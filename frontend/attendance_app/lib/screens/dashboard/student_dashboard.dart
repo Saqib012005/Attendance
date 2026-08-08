@@ -64,13 +64,6 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     _loadUserData();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (mounted && !isLoading) {
-      _loadUserData();
-    }
-  }
 
   //  UPDATED: Fetch real data from backend
   Future<void> _loadUserData({bool forceRefresh = false}) async {

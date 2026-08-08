@@ -64,13 +64,6 @@ class _TeacherDashboardPageState extends State<TeacherDashboardPage>
     _loadUserData();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (mounted && !isLoading) {
-      _loadUserData();
-    }
-  }
 
   Future<void> _loadUserData({bool forceRefresh = false}) async {
     // Use cache if available and recent (less than 5 minutes old)
