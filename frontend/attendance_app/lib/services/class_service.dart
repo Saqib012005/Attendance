@@ -337,30 +337,6 @@ class ClassService {
     }
   }
 
-  /// Get student's pending classes
-  Future<List<Map<String, dynamic>>> getStudentPendingClasses() async {
-    try {
-      final token = await _getToken();
-      
-      final response = await _dio.get(
-        '/students/pending-classes/',
-        options: Options(
-          headers: {'Authorization': 'Bearer $token'},
-        ),
-      );
-      
-      if (response.statusCode == 200 && response.data != null) {
-        if (response.data['pending_classes'] != null) {
-          return List<Map<String, dynamic>>.from(response.data['pending_classes']);
-        }
-      }
-      return [];
-    } catch (e) {
-      print('Error fetching pending classes: $e');
-      return [];
-    }
-  }
-
   /// Join a class with a code
   Future<Map<String, dynamic>> joinClass(String classCode) async {
     try {

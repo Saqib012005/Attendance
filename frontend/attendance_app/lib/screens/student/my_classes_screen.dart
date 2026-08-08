@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/class_service.dart';
 import 'attendance_history_screen.dart';
-import 'pending_classes_screen.dart';
 
 class StudentMyClassesScreen extends StatefulWidget {
   final String? initialJoinCode;
@@ -16,7 +15,6 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
   late AnimationController _animationController;
   
   List<Map<String, dynamic>> enrolledClasses = [];
-  List<Map<String, dynamic>> pendingClasses = [];
   bool isLoading = true;
   String? errorMessage;
 
@@ -45,30 +43,41 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
     });
 
     try {
+      // If we have an initial join code, process it first before loading classes
+      if (widget.initialJoinCode != null && !_handledDeepLink) {
+        _handledDeepLink = true;
+        
+        // Show loading indicator in a snackbar
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Joining class...'), duration: Duration(seconds: 2)),
+          );
+        }
+        
+        // Attempt to join
+        final result = await _classService.joinClass(widget.initialJoinCode!);
+        
+        if (mounted) {
+          if (result['success']) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result['message']), backgroundColor: Colors.green),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result['message']), backgroundColor: Colors.redAccent),
+            );
+          }
+        }
+      }
+
       final classes = await _classService.getStudentEnrolledClasses();
-      final pending = await _classService.getStudentPendingClasses();
       
       if (mounted) {
         setState(() {
           enrolledClasses = classes;
-          pendingClasses = pending;
           isLoading = false;
         });
         _animationController.forward();
-        
-        // Handle deep link auto-navigation
-        if (widget.initialJoinCode != null && !_handledDeepLink) {
-          _handledDeepLink = true;
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PendingClassesScreen(
-                pendingClasses: pendingClasses,
-                initialJoinCode: widget.initialJoinCode,
-              ),
-            ),
-          ).then((_) => _loadEnrolledClasses());
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -174,56 +183,7 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
               ],
             ),
           ),
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                margin: const EdgeInsets.only(right: 12),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.add_circle_outline_rounded,
-                    color: Color(0xFF007C91),
-                    size: 24,
-                  ),
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PendingClassesScreen(
-                          pendingClasses: pendingClasses,
-                        ),
-                      ),
-                    );
-                    _loadEnrolledClasses();
-                  },
-                ),
-              ),
-              if (pendingClasses.isNotEmpty)
-                Positioned(
-                  top: -2,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: const BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '${pendingClasses.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+
           Container(
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.2),
