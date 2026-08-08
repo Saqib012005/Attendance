@@ -95,116 +95,170 @@ class _MyClassesScreenState extends State<MyClassesScreen>
   }
 
   void _showCreateClassDialog() {
-    final codeController = TextEditingController(text: _generateRandomCode());
-    final nameController = TextEditingController();
-    final semesterController = TextEditingController();
+    final topicController = TextEditingController();
+    String selectedSemester = '1';
+    String selectedSection = 'A';
+    
+    final semesters = ['1', '2', '3', '4', '5', '6', '7', '8'];
+    final sections = ['A', 'B', 'C', 'D', 'OE'];
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF007C91), Color(0xFF0097A7)],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Create New Class',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDialogTextField(
+                  controller: topicController,
+                  label: 'Class Topic *',
+                  hint: 'e.g., Data Structures',
+                  icon: Icons.book_rounded,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Semester *',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: selectedSemester,
+                      items: semesters.map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null) {
+                          setState(() => selectedSemester = newValue);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Section *',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: selectedSection,
+                      items: sections.map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null) {
+                          setState(() => selectedSection = newValue);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
+              ),
+            ),
             Container(
-              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF007C91), Color(0xFF0097A7)],
                 ),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF007C91).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Create New Class',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1F2937),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  if (topicController.text.isNotEmpty) {
+                    final code = _generateRandomCode();
+                    final standardizedName = 'Sem $selectedSemester - Sec $selectedSection - ${topicController.text.trim()}';
+                    
+                    Navigator.pop(context);
+                    _navigateToAddStudents(
+                      code,
+                      standardizedName,
+                      'Semester $selectedSemester',
+                    );
+                  } else {
+                    _showErrorSnackBar('Please enter a class topic');
+                  }
+                },
+                icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                label: const Text('Next: Add Students'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
             ),
           ],
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDialogTextField(
-                controller: codeController,
-                label: 'Class Code (Auto-generated)',
-                hint: 'e.g., CS101',
-                icon: Icons.code_rounded,
-                readOnly: true,
-              ),
-              const SizedBox(height: 16),
-              _buildDialogTextField(
-                controller: nameController,
-                label: 'Class Name *',
-                hint: 'e.g., Computer Science',
-                icon: Icons.book_rounded,
-              ),
-              const SizedBox(height: 16),
-              _buildDialogTextField(
-                controller: semesterController,
-                label: 'Semester *',
-                hint: 'e.g., Fall 2024',
-                icon: Icons.calendar_today_rounded,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF007C91), Color(0xFF0097A7)],
-              ),
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF007C91).withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                if (codeController.text.isNotEmpty &&
-                    nameController.text.isNotEmpty &&
-                    semesterController.text.isNotEmpty) {
-                  Navigator.pop(context);
-                  _navigateToAddStudents(
-                    codeController.text,
-                    nameController.text,
-                    semesterController.text,
-                  );
-                } else {
-                  _showErrorSnackBar('Please fill in all required fields');
-                }
-              },
-              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-              label: const Text('Next: Add Students'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
