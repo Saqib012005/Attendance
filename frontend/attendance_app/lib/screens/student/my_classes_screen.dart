@@ -371,8 +371,9 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
   }
 
   Widget _buildModernClassCard(Map<String, dynamic> classData, bool isMobile) {
-    final classCode = classData['class_code'] ?? 'N/A';
-    final className = classData['class_name'] ?? 'Unknown Class';
+    final fullClassName = classData['class_name'] ?? 'Unknown Class';
+    final mainTitle = _getMainTitle(fullClassName);
+    final subTitle = _getSubTitle(fullClassName);
     final semester = classData['semester'] ?? 'N/A';
     final teacherName = classData['teacher_name'] ?? 'Unknown Teacher';
     final studentCount = classData['student_count'] ?? 0;
@@ -450,7 +451,7 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
                               ),
                             ),
                             child: Text(
-                              classCode,
+                              mainTitle,
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -461,7 +462,7 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            className,
+                            subTitle,
                             style: TextStyle(
                               fontSize: isMobile ? 17 : 18,
                               fontWeight: FontWeight.bold,
@@ -811,5 +812,30 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
     } catch (e) {
       return date.toString();
     }
+  }
+
+  // Helper functions to format class names
+  String _getMainTitle(String fullName) {
+    if (fullName.contains(' - ')) {
+      final parts = fullName.split(' - ');
+      if (parts.length >= 3) {
+        return '${parts[0]} - ${parts[1]}'; // "Sem 1 - Sec A"
+      } else {
+        return parts.sublist(0, parts.length - 1).join(' - ');
+      }
+    }
+    return fullName;
+  }
+
+  String _getSubTitle(String fullName) {
+    if (fullName.contains(' - ')) {
+      final parts = fullName.split(' - ');
+      if (parts.length >= 3) {
+        return parts.sublist(2).join(' - '); // "Data Structures"
+      } else {
+        return parts.last;
+      }
+    }
+    return 'Subject';
   }
 }

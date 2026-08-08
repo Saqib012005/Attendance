@@ -458,21 +458,22 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                     child: Column(
                       children: [
                         Text(
-                          classData['code'],
+                          _getMainTitle(classData['name']),
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 28,
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.2,
                           ),
+                          textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          classData['name'],
+                          _getSubTitle(classData['name']),
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1154,6 +1155,31 @@ class _MyClassesScreenState extends State<MyClassesScreen>
     );
   }
 
+  // Helper functions to format class names
+  String _getMainTitle(String fullName) {
+    if (fullName.contains(' - ')) {
+      final parts = fullName.split(' - ');
+      if (parts.length >= 3) {
+        return '${parts[0]} - ${parts[1]}'; // "Sem 1 - Sec A"
+      } else {
+        return parts.sublist(0, parts.length - 1).join(' - ');
+      }
+    }
+    return fullName;
+  }
+
+  String _getSubTitle(String fullName) {
+    if (fullName.contains(' - ')) {
+      final parts = fullName.split(' - ');
+      if (parts.length >= 3) {
+        return parts.sublist(2).join(' - '); // "Data Structures"
+      } else {
+        return parts.last;
+      }
+    }
+    return 'Subject';
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
@@ -1501,7 +1527,7 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                     children: [
                       Expanded(
                         child: Text(
-                          classData['code'],
+                          _getMainTitle(classData['name']),
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -1556,7 +1582,7 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                   const SizedBox(height: 6),
                   Expanded(
                     child: Text(
-                      classData['name'],
+                      _getSubTitle(classData['name']),
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey[700],
