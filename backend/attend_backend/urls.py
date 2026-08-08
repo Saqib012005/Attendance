@@ -34,6 +34,7 @@ from attendance.views import (
     get_pending_classes,
     join_class,
     join_fallback,
+    assetlinks_view,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.views.static import serve as static_serve
