@@ -4,8 +4,9 @@ import '../../services/class_service.dart';
 
 class PendingClassesScreen extends StatefulWidget {
   final List<Map<String, dynamic>> pendingClasses;
+  final String? initialJoinCode;
 
-  const PendingClassesScreen({super.key, required this.pendingClasses});
+  const PendingClassesScreen({super.key, required this.pendingClasses, this.initialJoinCode});
 
   @override
   State<PendingClassesScreen> createState() => _PendingClassesScreenState();
@@ -19,14 +20,21 @@ class _PendingClassesScreenState extends State<PendingClassesScreen> {
   void initState() {
     super.initState();
     pendingList = List.from(widget.pendingClasses);
+    
+    if (widget.initialJoinCode != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showJoinClassDialog(null, widget.initialJoinCode);
+      });
+    }
   }
 
-  void _showJoinClassDialog([Map<String, dynamic>? classData]) {
+  void _showJoinClassDialog([Map<String, dynamic>? classData, String? prefillCode]) {
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => _JoinClassDialog(
         classData: classData,
+        prefillCode: prefillCode,
         onJoinSuccess: () {
           if (classData != null) {
             setState(() {
@@ -217,10 +225,12 @@ class _PendingClassesScreenState extends State<PendingClassesScreen> {
 class _JoinClassDialog extends StatefulWidget {
   final Map<String, dynamic>? classData;
   final VoidCallback onJoinSuccess;
+  final String? prefillCode;
 
   const _JoinClassDialog({
     this.classData,
     required this.onJoinSuccess,
+    this.prefillCode,
   });
 
   @override
@@ -228,10 +238,16 @@ class _JoinClassDialog extends StatefulWidget {
 }
 
 class _JoinClassDialogState extends State<_JoinClassDialog> {
-  final _codeController = TextEditingController();
+  late final TextEditingController _codeController;
   final ClassService _classService = ClassService();
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _codeController = TextEditingController(text: widget.prefillCode ?? '');
+  }
 
   Future<void> _submitCode() async {
     final code = _codeController.text.trim();

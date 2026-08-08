@@ -4,7 +4,8 @@ import 'attendance_history_screen.dart';
 import 'pending_classes_screen.dart';
 
 class StudentMyClassesScreen extends StatefulWidget {
-  const StudentMyClassesScreen({super.key});
+  final String? initialJoinCode;
+  const StudentMyClassesScreen({super.key, this.initialJoinCode});
 
   @override
   State<StudentMyClassesScreen> createState() => _StudentMyClassesScreenState();
@@ -35,6 +36,8 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
     super.dispose();
   }
 
+  bool _handledDeepLink = false;
+
   Future<void> _loadEnrolledClasses() async {
     setState(() {
       isLoading = true;
@@ -52,6 +55,20 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
           isLoading = false;
         });
         _animationController.forward();
+        
+        // Handle deep link auto-navigation
+        if (widget.initialJoinCode != null && !_handledDeepLink) {
+          _handledDeepLink = true;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PendingClassesScreen(
+                pendingClasses: pendingClasses,
+                initialJoinCode: widget.initialJoinCode,
+              ),
+            ),
+          ).then((_) => _loadEnrolledClasses());
+        }
       }
     } catch (e) {
       if (mounted) {

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:app_links/app_links.dart';
 import '../../services/auth_service.dart';
 import '../../services/profile_service.dart';  
 import '../../widgets/enhanced_dashboard_card.dart';
@@ -26,6 +28,9 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
   int totalClasses = 0;
   double attendanceRate = 0.0;  
   int offlineRecordsCount = 0;
+
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
 
   // Cache management
   Map<String, dynamic>? _cachedUserData;
@@ -62,6 +67,45 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
   void initState() {
     super.initState();
     _loadUserData();
+    _initDeepLinks();
+  }
+
+  void _initDeepLinks() {
+    _appLinks = AppLinks();
+    
+    // Handle incoming links when the app is running
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    });
+
+    // Handle incoming links when app is launched from terminated state
+    _appLinks.getInitialAppLink().then((uri) {
+      if (uri != null) {
+        _handleDeepLink(uri);
+      }
+    });
+  }
+
+  void _handleDeepLink(Uri uri) {
+    if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'join') {
+      final classCode = uri.pathSegments[1];
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => StudentMyClassesScreen(initialJoinCode: classCode),
+          ),
+        ).then((_) {
+          _loadUserData(forceRefresh: true);
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
 
