@@ -1442,7 +1442,9 @@ def join_fallback(request, code):
   <a href='attendapp://join/{code}' class='btn'>Open in App</a>
 </body>
 </html>"""
-    return HttpResponse(html)from django.http import JsonResponse
+    return HttpResponse(html)
+
+from django.http import JsonResponse
 
 def assetlinks_view(request):
     return JsonResponse([{
