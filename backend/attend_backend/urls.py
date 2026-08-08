@@ -97,6 +97,9 @@ urlpatterns = [
     # Deep Link Fallback (handles with or without trailing slash)
     re_path(r'^join/(?P<code>[^/]+)/?$', join_fallback, name='join_fallback'),
 
+    # Android App Links (assetlinks.json)
+    path('.well-known/assetlinks.json', assetlinks_view, name='assetlinks'),
+
     # Flutter Web — must be last
     re_path(r'^(?P<path>.*)$', serve_flutter, name='flutter_web'),
 ]

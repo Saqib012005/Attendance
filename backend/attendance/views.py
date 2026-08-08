@@ -1442,4 +1442,16 @@ def join_fallback(request, code):
   <a href='attendapp://join/{code}' class='btn'>Open in App</a>
 </body>
 </html>"""
-    return HttpResponse(html)
+    return HttpResponse(html)from django.http import JsonResponse
+
+def assetlinks_view(request):
+    return JsonResponse([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "com.example.attendance_app",
+            "sha256_cert_fingerprints": [
+                "87:17:E3:5D:41:92:69:09:62:28:72:43:E3:68:77:C8:BF:2C:F4:BA:97:47:37:DE:B4:52:D2:4D:6B:94:83:C9"
+            ]
+        }
+    }], safe=False)
