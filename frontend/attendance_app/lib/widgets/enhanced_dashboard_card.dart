@@ -121,7 +121,6 @@ class _EnhancedDashboardCardState extends State<EnhancedDashboardCard>
       onTapUp: (_) {
         setState(() => _pressed = false);
         if (isMobile) _stopShimmer();
-        widget.onTap?.call();
       },
       onTapCancel: () {
         setState(() => _pressed = false);

@@ -452,6 +452,7 @@ def create_session(request):
     import string
     
     instruction_card = None
+    shape_combo = None
     if class_type == 'offline':
         from attendance.verification import generate_shape_combo
         shape_combo, instruction_card, pattern_code = generate_shape_combo()

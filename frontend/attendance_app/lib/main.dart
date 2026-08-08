@@ -10,7 +10,6 @@ import 'services/storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await StorageService.init();
 
   String initialRoute = '/login';
   final userJson = await StorageService.read(key: 'user');

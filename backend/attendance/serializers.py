@@ -257,6 +257,8 @@ class CreateSessionSerializer(serializers.Serializer):
     """Serializer for creating attendance session"""
     class_id = serializers.IntegerField()
     duration_minutes = serializers.IntegerField(min_value=1, max_value=300)
+    class_type = serializers.CharField(required=False, default='online')
+    board_type = serializers.CharField(required=False, default='whiteboard')
     
     def validate_class_id(self, value):
         """Check if class exists and belongs to teacher"""
