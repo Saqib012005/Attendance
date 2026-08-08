@@ -3,6 +3,8 @@
 import os
 import sys
 
+# Remove GSoC Django from sys.path to prevent conflicts with this project
+sys.path = [p for p in sys.path if 'gsoc\\django' not in p.lower() and 'gsoc/django' not in p.lower()]
 
 def main():
     """Run administrative tasks."""

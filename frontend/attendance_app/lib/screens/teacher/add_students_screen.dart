@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../services/class_service.dart';
 
 class AddStudentsScreen extends StatefulWidget {
   final int classId;
+  final String classCode;
+  final String className;
 
-  const AddStudentsScreen({super.key, required this.classId});
+  const AddStudentsScreen({
+    super.key, 
+    required this.classId,
+    this.classCode = '',
+    this.className = '',
+  });
 
   @override
   State<AddStudentsScreen> createState() => _AddStudentsScreenState();
@@ -260,23 +269,264 @@ class _AddStudentsScreenState extends State<AddStudentsScreen> {
     final screenW = MediaQuery.of(context).size.width;
     final isMobile = screenW < 900; // Increased breakpoint for better layout
 
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF007C91), Color(0xFF0097A7)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF007C91), Color(0xFF0097A7)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildAppBar(isMobile),
+                _buildTabBar(),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+                      _buildShareLinkTab(),
+                      _buildClassCodeTab(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        child: SafeArea(
+      ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: TabBar(
+        indicator: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        labelColor: const Color(0xFF007C91),
+        unselectedLabelColor: Colors.white,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), // Reduced font size to prevent squishing
+        dividerColor: Colors.transparent,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 8), // Reduce padding
+        tabs: const [
+          Tab(text: 'Manual Add'),
+          Tab(text: 'Share Link'),
+          Tab(text: 'Class Code'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShareLinkTab() {
+    final shareUrl = 'https://attendance.app/join/${widget.classCode}';
+    return Center(
+      child: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          margin: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20),
+            ],
+          ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _buildAppBar(isMobile),
-              Expanded(
-                child: isMobile 
-                  ? _buildMobileLayout() 
-                  : _buildDesktopLayout(),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF007C91).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.share_rounded, size: 48, color: Color(0xFF007C91)),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Invite Students via Link',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Share this message with your students so they can join the class directly.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 32),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Class Code: ${widget.classCode}',
+                        style: TextStyle(fontSize: 16, color: Colors.grey.shade700, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, color: Color(0xFF007C91)),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: 'https://attendance.app/join/${widget.classCode}'));
+                        _showSuccessSnackBar('Link copied to clipboard!');
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Share.share('Join my class ${widget.className} on the Attendance App: https://attendance.app/join/${widget.classCode}');
+                  },
+                  icon: const Icon(Icons.send_rounded, color: Colors.white),
+                  label: const Text(
+                    'Share via Messaging Apps',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF007C91),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClassCodeTab() {
+    return Center(
+      child: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.all(40),
+          margin: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF007C91).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.pin_rounded, size: 48, color: Color(0xFF007C91)),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Class Code',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Share this code with your students so they can join the class.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 32),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.grey.shade200, width: 2),
+                ),
+                child: Text(
+                  widget.classCode.isEmpty ? 'N/A' : widget.classCode,
+                  style: const TextStyle(
+                    fontSize: 40, // Reduced from 48 to prevent overflow
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 6,
+                    color: Color(0xFF007C91),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        if (widget.classCode.isNotEmpty) {
+                          Clipboard.setData(ClipboardData(text: widget.classCode));
+                          _showSuccessSnackBar('Class code copied!');
+                        }
+                      },
+                      icon: const Icon(Icons.copy_rounded, color: Color(0xFF007C91)),
+                      label: const Text(
+                        'Copy',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF007C91)),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: const BorderSide(color: Color(0xFF007C91), width: 2),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        if (widget.classCode.isNotEmpty) {
+                          Share.share('Join my class ${widget.className} on the Attendance App! Enter Class Code: ${widget.classCode}');
+                        }
+                      },
+                      icon: const Icon(Icons.share_rounded, color: Colors.white),
+                      label: const Text(
+                        'Share',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF007C91),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

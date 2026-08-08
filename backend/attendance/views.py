@@ -182,7 +182,7 @@ def class_detail(request, class_id):
         class_obj.delete()
         return Response({
             'message': f'Class "{class_name}" deleted successfully'
-        }, status=status.HTTP_204_NO_CONTENT)
+        }, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
@@ -214,7 +214,8 @@ def get_class_students(request, class_id):
                 'username': student.username,
                 'email': student.email,
                 'roll_no': profile.roll_no,
-                'enrolled_at': enrollment.enrolled_at
+                'enrolled_at': enrollment.enrolled_at,
+                'status': enrollment.status
             })
         except StudentProfile.DoesNotExist:
             students_data.append({
@@ -222,7 +223,8 @@ def get_class_students(request, class_id):
                 'username': student.username,
                 'email': student.email,
                 'roll_no': 'N/A',
-                'enrolled_at': enrollment.enrolled_at
+                'enrolled_at': enrollment.enrolled_at,
+                'status': enrollment.status
             })
     
     return Response({
@@ -285,10 +287,11 @@ def add_student_to_class(request, class_id):
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Enroll existing student
+                # Enroll existing student directly
                 Enrollment.objects.create(
                     class_obj=class_obj,
-                    student=existing_user
+                    student=existing_user,
+                    status='enrolled'
                 )
                 
                 try:
@@ -346,10 +349,11 @@ def add_student_to_class(request, class_id):
                     roll_no=student_data['rollNo']
                 )
                 
-                # Enroll in class
+                # Enroll in class directly
                 Enrollment.objects.create(
                     class_obj=class_obj,
-                    student=student
+                    student=student,
+                    status='enrolled'
                 )
                 
                 return Response({
@@ -537,7 +541,7 @@ def get_student_active_sessions(request):
         )
     
     # Get enrolled classes
-    enrolled_classes = Enrollment.objects.filter(student=user).values_list('class_obj_id', flat=True)
+    enrolled_classes = Enrollment.objects.filter(student=user, status='enrolled').values_list('class_obj_id', flat=True)
     
     # Get active sessions for those classes
     sessions = AttendanceSession.objects.filter(
@@ -1352,3 +1356,66 @@ def get_session_attendance_details(request, session_id):
             'attendance_rate': attendance_rate
         }
     })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_pending_classes(request):
+    user = request.user
+    if user.role != 'student':
+        return Response({'error': 'Only students can view pending classes'}, status=status.HTTP_403_FORBIDDEN)
+    
+    yesterday = timezone.now() - timedelta(days=1)
+    
+    # Delete expired pending invitations
+    Enrollment.objects.filter(student=user, status='pending', enrolled_at__lt=yesterday).delete()
+    
+    pending_enrollments = Enrollment.objects.filter(
+        student=user,
+        status='pending'
+    ).select_related('class_obj', 'class_obj__teacher')
+    
+    classes_data = []
+    for enrollment in pending_enrollments:
+        cls = enrollment.class_obj
+        classes_data.append({
+            'id': cls.id,
+            'class_code': cls.class_code,
+            'class_name': cls.class_name,
+            'semester': cls.semester,
+            'teacher_name': cls.teacher_name,
+            'pending_since': enrollment.enrolled_at
+        })
+        
+    return Response({'pending_classes': classes_data})
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def join_class(request):
+    user = request.user
+    if user.role != 'student':
+        return Response({'error': 'Only students can join classes'}, status=status.HTTP_403_FORBIDDEN)
+        
+    class_code = request.data.get('class_code')
+    if not class_code:
+        return Response({'error': 'Class code is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    try:
+        class_obj = Class.objects.get(class_code=class_code)
+    except Class.DoesNotExist:
+        return Response({'error': 'Invalid class code'}, status=status.HTTP_404_NOT_FOUND)
+        
+    enrollment, created = Enrollment.objects.get_or_create(
+        class_obj=class_obj,
+        student=user,
+        defaults={'status': 'enrolled'}
+    )
+    
+    if not created:
+        if enrollment.status == 'enrolled':
+            return Response({'error': 'Already enrolled in this class'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            enrollment.status = 'enrolled'
+            enrollment.save()
+            return Response({'message': f'Successfully joined {class_obj.class_name}'}, status=status.HTTP_200_OK)
+            
+    return Response({'message': f'Successfully joined {class_obj.class_name}'}, status=status.HTTP_201_CREATED)

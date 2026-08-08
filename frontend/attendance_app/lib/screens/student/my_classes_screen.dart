@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/class_service.dart';
 import 'attendance_history_screen.dart';
+import 'pending_classes_screen.dart';
 
 class StudentMyClassesScreen extends StatefulWidget {
   const StudentMyClassesScreen({super.key});
@@ -14,6 +15,7 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
   late AnimationController _animationController;
   
   List<Map<String, dynamic>> enrolledClasses = [];
+  List<Map<String, dynamic>> pendingClasses = [];
   bool isLoading = true;
   String? errorMessage;
 
@@ -41,10 +43,12 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
 
     try {
       final classes = await _classService.getStudentEnrolledClasses();
+      final pending = await _classService.getStudentPendingClasses();
       
       if (mounted) {
         setState(() {
           enrolledClasses = classes;
+          pendingClasses = pending;
           isLoading = false;
         });
         _animationController.forward();
@@ -152,6 +156,56 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
                 ),
               ],
             ),
+          ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(right: 12),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.add_circle_outline_rounded,
+                    color: Color(0xFF007C91),
+                    size: 24,
+                  ),
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PendingClassesScreen(
+                          pendingClasses: pendingClasses,
+                        ),
+                      ),
+                    );
+                    _loadEnrolledClasses();
+                  },
+                ),
+              ),
+              if (pendingClasses.isNotEmpty)
+                Positioned(
+                  top: -2,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${pendingClasses.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           Container(
             decoration: BoxDecoration(
@@ -555,20 +609,21 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.white, Colors.grey.shade50],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.white, Colors.grey.shade50],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.5,
-          maxChildSize: 0.9,
-          builder: (_, controller) => ListView(
+          child: ListView(
             controller: controller,
             padding: const EdgeInsets.all(24),
             children: [

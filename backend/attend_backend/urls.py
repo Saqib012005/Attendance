@@ -31,6 +31,8 @@ from attendance.views import (
     verify_image,
     upload_reference_image,
     get_student_active_sessions,
+    get_pending_classes,
+    join_class,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.views.static import serve as static_serve
@@ -66,6 +68,8 @@ urlpatterns = [
 
     # Student enrolled classes
     path('api/v1/students/my-classes/', get_student_enrolled_classes, name='student_enrolled_classes'),
+    path('api/v1/students/pending-classes/', get_pending_classes, name='student_pending_classes'),
+    path('api/v1/students/join-class/', join_class, name='join_class'),
     path('api/v1/students/my-attendance/', get_student_attendance_history, name='student_attendance_history'),
 
     # Session management

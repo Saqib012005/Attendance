@@ -65,9 +65,14 @@ class Class(models.Model):
     
 class Enrollment(models.Model):
     """Table for student enrollments in classes"""
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('enrolled', 'Enrolled')
+    )
     class_obj = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='enrollments')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='enrolled_classes', limit_choices_to={'role': 'student'})
     enrolled_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='enrolled')
 
     class Meta:
         db_table = 'enrollments'  # Table name in PostgreSQL
@@ -75,7 +80,7 @@ class Enrollment(models.Model):
         ordering = ['class_obj', 'student']
 
     def __str__(self):
-        return f"{self.student.username} enrolled in {self.class_obj.class_code}"
+        return f"{self.student.username} {self.status} in {self.class_obj.class_code}"
 
 
 # AttendanceSession

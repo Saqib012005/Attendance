@@ -1,6 +1,14 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'add_students_screen.dart';
 import '../../services/class_service.dart';
+
+String _generateRandomCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  final rnd = Random();
+  return String.fromCharCodes(Iterable.generate(
+      6, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+}
 
 class MyClassesScreen extends StatefulWidget {
   const MyClassesScreen({super.key});
@@ -87,7 +95,7 @@ class _MyClassesScreenState extends State<MyClassesScreen>
   }
 
   void _showCreateClassDialog() {
-    final codeController = TextEditingController();
+    final codeController = TextEditingController(text: _generateRandomCode());
     final nameController = TextEditingController();
     final semesterController = TextEditingController();
 
@@ -124,9 +132,10 @@ class _MyClassesScreenState extends State<MyClassesScreen>
             children: [
               _buildDialogTextField(
                 controller: codeController,
-                label: 'Class Code *',
+                label: 'Class Code (Auto-generated)',
                 hint: 'e.g., CS101',
                 icon: Icons.code_rounded,
+                readOnly: true,
               ),
               const SizedBox(height: 16),
               _buildDialogTextField(
@@ -205,9 +214,11 @@ class _MyClassesScreenState extends State<MyClassesScreen>
     required String label,
     required String hint,
     required IconData icon,
+    bool readOnly = false,
   }) {
     return TextField(
       controller: controller,
+      readOnly: readOnly,
       style: const TextStyle(fontSize: 15),
       decoration: InputDecoration(
         labelText: label,
@@ -251,7 +262,11 @@ class _MyClassesScreenState extends State<MyClassesScreen>
         final studentsAdded = await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => AddStudentsScreen(classId: classId),
+            builder: (context) => AddStudentsScreen(
+              classId: classId,
+              classCode: classData['code']?.toString() ?? '',
+              className: classData['name']?.toString() ?? '',
+            ),
           ),
         );
 
@@ -511,6 +526,8 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                     MaterialPageRoute(
                       builder: (context) => AddStudentsScreen(
                         classId: classData['id'],
+                        classCode: classData['code']?.toString() ?? '',
+                        className: classData['name']?.toString() ?? '',
                       ),
                     ),
                   ).then((_) => _loadClasses());
@@ -577,6 +594,8 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                     MaterialPageRoute(
                       builder: (context) => AddStudentsScreen(
                         classId: classData['id'],
+                        classCode: classData['code']?.toString() ?? '',
+                        className: classData['name']?.toString() ?? '',
                       ),
                     ),
                   ).then((value) async {
@@ -634,6 +653,8 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                             MaterialPageRoute(
                               builder: (context) => AddStudentsScreen(
                                 classId: classData['id'],
+                                classCode: classData['code']?.toString() ?? '',
+                                className: classData['name']?.toString() ?? '',
                               ),
                             ),
                           ).then((_) => _loadClasses());
@@ -1455,6 +1476,8 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                                   MaterialPageRoute(
                                     builder: (context) => AddStudentsScreen(
                                       classId: classData['id'],
+                                      classCode: classData['code']?.toString() ?? '',
+                                      className: classData['name']?.toString() ?? '',
                                     ),
                                   ),
                                 ).then((_) => _loadClasses());

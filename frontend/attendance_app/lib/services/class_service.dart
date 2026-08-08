@@ -336,4 +336,59 @@ class ClassService {
       return false;
     }
   }
+
+  /// Get student's pending classes
+  Future<List<Map<String, dynamic>>> getStudentPendingClasses() async {
+    try {
+      final token = await _getToken();
+      
+      final response = await _dio.get(
+        '/students/pending-classes/',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+      
+      if (response.statusCode == 200 && response.data != null) {
+        if (response.data['pending_classes'] != null) {
+          return List<Map<String, dynamic>>.from(response.data['pending_classes']);
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching pending classes: $e');
+      return [];
+    }
+  }
+
+  /// Join a class with a code
+  Future<Map<String, dynamic>> joinClass(String classCode) async {
+    try {
+      final token = await _getToken();
+      
+      final response = await _dio.post(
+        '/students/join-class/',
+        data: {'class_code': classCode},
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          'success': true,
+          'message': response.data['message'] ?? 'Successfully joined class',
+        };
+      }
+      
+      return {'success': false, 'message': 'Failed to join class'};
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'message': e.response?.data['error'] ?? 'Failed to join class',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to join class'};
+    }
+  }
 }
