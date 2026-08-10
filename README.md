@@ -1,6 +1,6 @@
 <div align="center">
   
-# 🎓 Vizzard Attendance Management System
+# 🎓 Attendance Management System
 
 **A next-generation, seamless, and lightning-fast attendance tracking ecosystem.**
 
