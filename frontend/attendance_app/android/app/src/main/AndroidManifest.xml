@@ -46,6 +46,10 @@
                 <data android:scheme="attendapp" android:host="join" />
             </intent-filter>
         </activity>
+        
+        <!-- Disable Flutter's automatic deep link routing to prevent onUnknownRoute from pushing the Login screen -->
+        <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
