@@ -44,6 +44,16 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       initialRoute: initialRoute,
+      onGenerateRoute: (settings) {
+        // Safeguard: Prevent Flutter from pushing deep links if the Android setting fails
+        if (settings.name != null && (settings.name!.startsWith('/join/') || settings.name!.contains('attendapp'))) {
+          return PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const SizedBox.shrink(),
+            opaque: false,
+          );
+        }
+        return null;
+      },
       routes: {
         '/login': (context) => const LoginPage(),
         '/signup': (context) => const SignUpPage(),
@@ -62,9 +72,10 @@ class MyApp extends StatelessWidget {
           ],
         ),
       },
-      onUnknownRoute: (settings) => MaterialPageRoute(
-        builder: (_) => const LoginPage(),
-      ),
+      onUnknownRoute: (settings) {
+        // Prevent unknown deep links from crashing the app or pushing login unexpectedly
+        return MaterialPageRoute(builder: (_) => const LoginPage());
+      },
     );
   }
 }
