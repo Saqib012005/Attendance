@@ -31,6 +31,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
 
   late AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
+  static bool _hasHandledInitialLink = false;
 
   // Cache management
   Map<String, dynamic>? _cachedUserData;
@@ -79,11 +80,14 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     });
 
     // Handle incoming links when app is launched from terminated state
-    _appLinks.getInitialLink().then((uri) {
-      if (uri != null) {
-        _handleDeepLink(uri);
-      }
-    });
+    if (!_hasHandledInitialLink) {
+      _appLinks.getInitialLink().then((uri) {
+        if (uri != null) {
+          _hasHandledInitialLink = true;
+          _handleDeepLink(uri);
+        }
+      });
+    }
   }
 
   void _handleDeepLink(Uri uri) {
