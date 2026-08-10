@@ -147,5 +147,5 @@ We welcome contributions to make this ecosystem even better!
 ---
 
 <div align="center">
-  <i>Built with passion by the Vizzard Team and Sujan Bhat</i>
+  <i>Built with passion by the Vignesh Anand, Sujan Bhat, Sharan U and Syed Saqib</i>
 </div>
