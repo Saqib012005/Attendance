@@ -187,28 +187,47 @@ class ClassListSerializer(serializers.ModelSerializer):
 
 class CreateClassSerializer(serializers.Serializer):  # Changed from ModelSerializer
     """Serializer for creating a class"""
-    code = serializers.CharField(max_length=20)
     name = serializers.CharField(max_length=200)
     semester = serializers.CharField(max_length=50)
     students = StudentCreateSerializer(many=True, write_only=True, required=False)
 
-    def validate_code(self, value):
-        """Check if class code already exists"""
-        if Class.objects.filter(class_code__iexact=value).exists():
-            raise serializers.ValidationError(f"Class code {value} already exists.")
-        return value
-
     def create(self, validated_data):
         from django.db import transaction
+        import uuid
+        import re
 
         students_data = validated_data.pop('students', [])
         teacher = self.context['request'].user
 
         with transaction.atomic():
+            # Generate a unique class code: s<semester><cleaned_topic>
+            sem = validated_data['semester'].strip()
+            # Extract digits from semester (e.g. "Semester 7" -> "7")
+            digits = re.sub(r'[^0-9]', '', sem)
+            clean_sem = digits if digits else re.sub(r'[^a-zA-Z0-9]', '', sem).lower()
+            
+            # Try to extract the topic from "Sem X - Topic"
+            topic = validated_data['name']
+            if ' - ' in topic:
+                topic = topic.split(' - ', 1)[1]
+            
+            # Clean topic: remove spaces and non-alphanumeric, convert to lowercase
+            clean_topic = re.sub(r'[^a-zA-Z0-9]', '', topic).lower()
+            
+            # Use first 4 characters of the topic for brevity
+            topic_abbr = clean_topic[:4] if len(clean_topic) > 4 else clean_topic
+            
+            base_code = f"s{clean_sem}{topic_abbr}"
+            
+            # Ensure it is unique by checking DB, append short uuid if needed
+            final_code = base_code
+            if Class.objects.filter(class_code__iexact=final_code).exists():
+                final_code = f"{base_code}{uuid.uuid4().hex[:4]}"
+            
             # Create the class
             class_obj = Class.objects.create(
                 teacher=teacher,
-                class_code=validated_data['code'],
+                class_code=final_code,
                 class_name=validated_data['name'],
                 semester=validated_data['semester']
             )

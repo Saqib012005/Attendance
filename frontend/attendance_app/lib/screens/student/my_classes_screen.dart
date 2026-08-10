@@ -372,8 +372,6 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
 
   Widget _buildModernClassCard(Map<String, dynamic> classData, bool isMobile) {
     final fullClassName = classData['class_name'] ?? 'Unknown Class';
-    final mainTitle = _getMainTitle(fullClassName);
-    final subTitle = _getSubTitle(fullClassName);
     final semester = classData['semester'] ?? 'N/A';
     final teacherName = classData['teacher_name'] ?? 'Unknown Teacher';
     final studentCount = classData['student_count'] ?? 0;
@@ -437,32 +435,8 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF007C91).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: const Color(0xFF007C91).withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              mainTitle,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF007C91),
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
                           Text(
-                            subTitle,
+                            _getMainTitle(fullClassName),
                             style: TextStyle(
                               fontSize: isMobile ? 17 : 18,
                               fontWeight: FontWeight.bold,
@@ -639,28 +613,8 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        classData['class_code'] ?? 'N/A',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
                     Text(
-                      classData['class_name'] ?? 'Unknown Class',
+                      _getMainTitle(classData['class_name'] ?? 'Unknown Class'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -815,27 +769,14 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> with Si
   }
 
   // Helper functions to format class names
-  String _getMainTitle(String fullName) {
-    if (fullName.contains(' - ')) {
-      final parts = fullName.split(' - ');
-      if (parts.length >= 3) {
-        return '${parts[0]} - ${parts[1]}'; // "Sem 1 - Sec A"
-      } else {
-        return parts.sublist(0, parts.length - 1).join(' - ');
-      }
+  String _getMainTitle(String fullClassName) {
+    if (fullClassName.startsWith('Sem ') && fullClassName.contains(' - ')) {
+      return fullClassName.split(' - ').sublist(1).join(' - ');
     }
-    return fullName;
+    return fullClassName;
   }
 
-  String _getSubTitle(String fullName) {
-    if (fullName.contains(' - ')) {
-      final parts = fullName.split(' - ');
-      if (parts.length >= 3) {
-        return parts.sublist(2).join(' - '); // "Data Structures"
-      } else {
-        return parts.last;
-      }
-    }
-    return 'Subject';
+  String _getSubTitle(String fullClassName) {
+    return '';
   }
 }

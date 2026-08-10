@@ -97,10 +97,8 @@ class _MyClassesScreenState extends State<MyClassesScreen>
   void _showCreateClassDialog() {
     final topicController = TextEditingController();
     String selectedSemester = '1';
-    String selectedSection = 'A';
     
     final semesters = ['1', '2', '3', '4', '5', '6', '7', '8'];
-    final sections = ['A', 'B', 'C', 'D', 'OE'];
 
     showDialog(
       context: context,
@@ -172,37 +170,6 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Section *',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: selectedSection,
-                      items: sections.map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (newValue) {
-                        if (newValue != null) {
-                          setState(() => selectedSection = newValue);
-                        }
-                      },
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -231,12 +198,10 @@ class _MyClassesScreenState extends State<MyClassesScreen>
               child: ElevatedButton.icon(
                 onPressed: () {
                   if (topicController.text.isNotEmpty) {
-                    final code = _generateRandomCode();
-                    final standardizedName = 'Sem $selectedSemester - Sec $selectedSection - ${topicController.text.trim()}';
+                    final standardizedName = topicController.text.trim();
                     
                     Navigator.pop(context);
                     _navigateToAddStudents(
-                      code,
                       standardizedName,
                       'Semester $selectedSemester',
                     );
@@ -296,12 +261,11 @@ class _MyClassesScreenState extends State<MyClassesScreen>
     );
   }
 
-  void _navigateToAddStudents(String code, String name, String semester) async {
+  void _navigateToAddStudents(String name, String semester) async {
     setState(() => isLoading = true);
 
     try {
       final result = await _classService.createClass(
-        code: code,
         name: name,
         semester: semester,
         students: [],
@@ -318,8 +282,8 @@ class _MyClassesScreenState extends State<MyClassesScreen>
           MaterialPageRoute(
             builder: (context) => AddStudentsScreen(
               classId: classId,
-              classCode: classData['code']?.toString() ?? '',
-              className: classData['name']?.toString() ?? '',
+              className: name,
+              classCode: classData['class_code'] ?? '',
             ),
           ),
         );
@@ -458,7 +422,7 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                     child: Column(
                       children: [
                         Text(
-                          _getMainTitle(classData['name']),
+                          classData['name'] ?? 'Class',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 22,
@@ -466,16 +430,6 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                             letterSpacing: 1.2,
                           ),
                           textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _getSubTitle(classData['name']),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
                         ),
                         const SizedBox(height: 16),
                         
@@ -511,7 +465,6 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                        ],
                      ),
                   ),
-                  // },
                   
                   // Tab Views
                   Expanded(
@@ -956,12 +909,6 @@ class _MyClassesScreenState extends State<MyClassesScreen>
               
               Navigator.pop(context);
               
-              // Note: You'll need to implement this in backend
-              // For now, we'll just show a message
-              //_showInfoSnackBar(
-               // 'Edit functionality requires backend update endpoint',
-              //);
-              
               //Future implementation:
               final success = await _classService.updateStudentInClass(
                 classId: classId,
@@ -1156,28 +1103,15 @@ class _MyClassesScreenState extends State<MyClassesScreen>
   }
 
   // Helper functions to format class names
-  String _getMainTitle(String fullName) {
-    if (fullName.contains(' - ')) {
-      final parts = fullName.split(' - ');
-      if (parts.length >= 3) {
-        return '${parts[0]} - ${parts[1]}'; // "Sem 1 - Sec A"
-      } else {
-        return parts.sublist(0, parts.length - 1).join(' - ');
-      }
+  String _getMainTitle(String fullClassName) {
+    if (fullClassName.startsWith('Sem ') && fullClassName.contains(' - ')) {
+      return fullClassName.split(' - ').sublist(1).join(' - ');
     }
-    return fullName;
+    return fullClassName;
   }
 
-  String _getSubTitle(String fullName) {
-    if (fullName.contains(' - ')) {
-      final parts = fullName.split(' - ');
-      if (parts.length >= 3) {
-        return parts.sublist(2).join(' - '); // "Data Structures"
-      } else {
-        return parts.last;
-      }
-    }
-    return 'Subject';
+  String _getSubTitle(String fullClassName) {
+    return '';
   }
 
   @override
@@ -1579,19 +1513,7 @@ class _MyClassesScreenState extends State<MyClassesScreen>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Expanded(
-                    child: Text(
-                      _getSubTitle(classData['name']),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[700],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(

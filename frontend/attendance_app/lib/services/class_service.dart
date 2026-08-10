@@ -47,7 +47,6 @@ class ClassService {
 
   /// Create a new class with students
   Future<Map<String, dynamic>> createClass({
-    required String code,
     required String name,
     required String semester,
     required List<Map<String, String>> students,
@@ -58,7 +57,6 @@ class ClassService {
       final response = await _dio.post(
         '/classes/',
         data: {
-          'code': code,
           'name': name,
           'semester': semester,
           'students': students,
