@@ -90,7 +90,12 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     }
   }
 
+  static String? _lastHandledUri;
+
   void _handleDeepLink(Uri uri) {
+    if (_lastHandledUri == uri.toString()) return;
+    _lastHandledUri = uri.toString();
+    
     String? classCode;
     
     // Handle https://attendance-production-5fb3.up.railway.app/join/CODE
@@ -270,6 +275,9 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
         _cachedUserData = null;
         _lastFetch = null;
       });
+
+      _hasHandledInitialLink = false;
+      _lastHandledUri = null;
 
       await _authService.logout();
       if (mounted) {
