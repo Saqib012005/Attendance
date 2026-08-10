@@ -6,7 +6,7 @@ class StorageService {
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   static Future<void> write({required String key, required String value}) async {
-    if (kIsWeb) {
+    if (kIsWeb || key == 'user') {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(key, value);
     } else {
@@ -15,7 +15,7 @@ class StorageService {
   }
 
   static Future<String?> read({required String key}) async {
-    if (kIsWeb) {
+    if (kIsWeb || key == 'user') {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString(key);
     } else {
@@ -24,7 +24,7 @@ class StorageService {
   }
 
   static Future<void> delete({required String key}) async {
-    if (kIsWeb) {
+    if (kIsWeb || key == 'user') {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(key);
     } else {
