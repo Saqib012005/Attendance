@@ -9,8 +9,9 @@ from attendance.models import User, Class, Enrollment, StudentProfile
 # 1. Create Teacher
 teacher, _ = User.objects.get_or_create(
     email='teacher@example.com',
-    defaults={'username': 'teacher', 'role': 'teacher', 'first_name': 'Teacher', 'last_name': 'Account'}
+    defaults={'username': 'teacher', 'role': 'teacher', 'first_name': 'Teacher', 'last_name': 'Account', 'is_staff': True}
 )
+teacher.is_staff = True
 teacher.set_password('admin123')
 teacher.save()
 print("Teacher account ready: teacher@example.com / admin123")
