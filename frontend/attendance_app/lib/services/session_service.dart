@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../config/api_config.dart';
@@ -6,12 +7,34 @@ import 'storage_service.dart';
 class SessionService {
   final String baseUrl = ApiConfig.baseUrl; 
   final Dio _dio = Dio();
-  
 
   SessionService() {
     _dio.options.baseUrl = baseUrl;
     _dio.options.connectTimeout = ApiConfig.connectionTimeout;
     _dio.options.receiveTimeout = ApiConfig.receiveTimeout;
+  }
+
+  String _parseError(dynamic data, String fallback) {
+    if (data == null) return fallback;
+    if (data is Map) {
+      return data['error']?.toString() ??
+          data['detail']?.toString() ??
+          data['message']?.toString() ??
+          data.toString();
+    }
+    if (data is String) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is Map) {
+          return decoded['error']?.toString() ??
+              decoded['detail']?.toString() ??
+              decoded['message']?.toString() ??
+              data;
+        }
+      } catch (_) {}
+      return data;
+    }
+    return data.toString();
   }
 
   Future<String?> _getToken() async {
@@ -48,7 +71,7 @@ class SessionService {
     } on DioException catch (e) {
       return {
         'success': false,
-        'message': e.response?.data['error'] ?? 'Failed to create session',
+        'message': _parseError(e.response?.data, 'Failed to create session: ${e.message}'),
       };
     }
   }
@@ -99,6 +122,68 @@ class SessionService {
     }
   }
 
+  Future<Map<String, dynamic>?> getSecureEpoch(String sessionId) async {
+    try {
+      final token = await _getToken();
+      final response = await _dio.get(
+        '/sessions/$sessionId/secure-epoch/',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (response.statusCode == 200) {
+        if (response.data is Map) {
+          return Map<String, dynamic>.from(response.data);
+        } else if (response.data is String) {
+          final decoded = jsonDecode(response.data);
+          if (decoded is Map) {
+            return Map<String, dynamic>.from(decoded);
+          }
+        }
+      }
+      return null;
+    } catch (e) {
+      print('getSecureEpoch error: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingReviews(String sessionId) async {
+    try {
+      final token = await _getToken();
+      final response = await _dio.get(
+        '/sessions/$sessionId/reviews/',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (response.statusCode == 200) {
+        dynamic data = response.data;
+        if (data is String) {
+          data = jsonDecode(data);
+        }
+        if (data is Map && data['reviews'] != null) {
+          return List<Map<String, dynamic>>.from(data['reviews']);
+        }
+      }
+      return [];
+    } catch (e) {
+      print('getPendingReviews error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> resolveReview(int recordId, String decision) async {
+    try {
+      final token = await _getToken();
+      final response = await _dio.post(
+        '/attendance/$recordId/review/',
+        data: {'decision': decision},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('resolveReview error: $e');
+      return false;
+    }
+  }
+
   /// End session and get statistics
   Future<Map<String, dynamic>> endSession(String sessionId) async {
     try {
@@ -127,7 +212,7 @@ class SessionService {
     } on DioException catch (e) {
       return {
         'success': false,
-        'message': e.response?.data['error'] ?? 'Error ending session',
+        'message': _parseError(e.response?.data, 'Error ending session: ${e.message}'),
       };
     } catch (e) {
       print('Error ending session: $e');
@@ -161,7 +246,7 @@ class SessionService {
     } on DioException catch (e) {
       return {
         'success': false,
-        'message': e.response?.data['error'] ?? 'Failed to mark attendance',
+        'message': _parseError(e.response?.data, 'Failed to mark attendance: ${e.message}'),
       };
     }
   }
@@ -228,7 +313,7 @@ class SessionService {
     } on DioException catch (e) {
       return {
         'success': false,
-        'message': e.response?.data['error'] ?? 'Failed to mark attendance',
+        'message': _parseError(e.response?.data, 'Failed to mark attendance: ${e.message}'),
       };
     }
   }

@@ -2,15 +2,36 @@ import 'package:dio/dio.dart';
 
 import '../config/api_config.dart';
 import 'storage_service.dart';
+import 'package:uuid/uuid.dart';
 
 class AttendanceService {
   final Dio _dio = Dio();
-  
 
   AttendanceService() {
     _dio.options.baseUrl = ApiConfig.baseUrl;
-    _dio.options.connectTimeout = const Duration(seconds: 10);
-    _dio.options.receiveTimeout = const Duration(seconds: 10);
+    _dio.options.connectTimeout = const Duration(seconds: 30);
+    _dio.options.receiveTimeout = const Duration(seconds: 30);
+  }
+
+  Future<String> getDeviceId() async {
+    var id = await StorageService.read(key: 'secure_device_id');
+    if (id == null) {
+      id = const Uuid().v4();
+      await StorageService.write(key: 'secure_device_id', value: id);
+    }
+    return id;
+  }
+
+  Future<void> ensureDeviceRegistered() async {
+    final token = await _getToken();
+    final deviceId = await getDeviceId();
+    try {
+      await _dio.post('/auth/device/',
+          data: {'device_id': deviceId, 'device_name': 'CampusGuard device'},
+          options: Options(headers: {'Authorization': 'Bearer $token'}));
+    } on DioException catch (error) {
+      if (error.response?.statusCode != 403) rethrow;
+    }
   }
 
   Future<String?> _getToken() async {
@@ -18,12 +39,26 @@ class AttendanceService {
   }
 
   /// Mark attendance by scanning QR code
-  Future<Map<String, dynamic>> markAttendance(String sessionId) async {
+  Future<Map<String, dynamic>> markAttendance(
+    String sessionId, {
+    required String qrPayload,
+    required String captcha,
+    required Map<String, dynamic> gyroscope,
+    required Map<String, dynamic> accelerometer,
+  }) async {
     try {
       final token = await _getToken();
+      await ensureDeviceRegistered();
       
       final response = await _dio.post(
         '/sessions/$sessionId/mark/',
+        data: {
+          'qr_payload': qrPayload,
+          'captcha': captcha,
+          'device_id': await getDeviceId(),
+          'gyroscope': gyroscope,
+          'accelerometer': accelerometer,
+        },
         options: Options(
           headers: {'Authorization': 'Bearer $token'},
         ),
@@ -51,9 +86,10 @@ class AttendanceService {
           'message': errorMessage,
         };
       }
+      
       return {
         'success': false,
-        'message': 'Network error: ${e.message}',
+        'message': 'Network error. Attendance was not marked.',
       };
     } catch (e) {
       return {

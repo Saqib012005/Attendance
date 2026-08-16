@@ -41,6 +41,10 @@ from attendance.views import (
     get_session_attendance_details,
     update_attendance_status,
     manual_mark_attendance,
+    get_secure_epoch,
+    register_device,
+    resolve_cross_verification,
+    get_pending_reviews,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.views.static import serve as static_serve
@@ -64,6 +68,7 @@ urlpatterns = [
     # User management
     path('api/v1/auth/register/', RegisterView.as_view(), name='register'),
     path('api/v1/auth/me/', MeView.as_view(), name='me'),
+    path('api/v1/auth/device/', register_device, name='register_device'),
     path('api/v1/auth/check-student/', check_student_by_email, name='check-student'),
 
     # Admin endpoints
@@ -99,6 +104,8 @@ urlpatterns = [
     path('api/v1/sessions/active/', get_active_sessions, name='active_sessions'),
     path('api/v1/sessions/<uuid:session_id>/', get_session_details, name='session_details'),
     path('api/v1/sessions/<uuid:session_id>/mark/', mark_attendance, name='mark_attendance'),
+    path('api/v1/sessions/<uuid:session_id>/secure-epoch/', get_secure_epoch, name='secure_epoch'),
+    path('api/v1/sessions/<uuid:session_id>/reviews/', get_pending_reviews, name='pending_reviews'),
     path('api/v1/sessions/<uuid:session_id>/end/', end_session, name='end_session'),
 
     # Manual mark attendance
@@ -107,6 +114,7 @@ urlpatterns = [
     # Teacher attendance history
     path('api/v1/teachers/attendance-history/', get_teacher_attendance_history, name='teacher_attendance_history'),
     path('api/v1/attendance/<int:record_id>/update/', update_attendance_status, name='update_attendance'),
+    path('api/v1/attendance/<int:record_id>/review/', resolve_cross_verification, name='resolve_review'),
     path('api/v1/sessions/<uuid:session_id>/attendance/', get_session_attendance_details, name='session_attendance_details'),
 
     # Utility

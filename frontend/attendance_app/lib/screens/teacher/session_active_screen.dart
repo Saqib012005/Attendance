@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/session_service.dart';
@@ -22,23 +23,32 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
   
   Timer? _countdownTimer;
   Timer? _refreshTimer;
+  Timer? _qrTimer;
   int remainingSeconds = 0;
   
   List<Map<String, dynamic>> students = [];
   Map<String, dynamic> statistics = {};
   bool isLoading = true;
+  bool isUploadingReference = false;
+  String? referenceImagePath;
+  String? _secureQr;
+  String _captcha = '----';
+  int _qrSeconds = 20;
+  List<Map<String, dynamic>> _reviews = [];
 
   @override
   void initState() {
     super.initState();
     _initializeSession();
     _startAutoRefresh();
+    _refreshSecureEpoch();
   }
 
   @override
   void dispose() {
     _countdownTimer?.cancel();
     _refreshTimer?.cancel();
+    _qrTimer?.cancel();
     super.dispose();
   }
 
@@ -97,7 +107,42 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
     // Refresh student list every 3 seconds for real-time updates
     _refreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       _fetchAttendanceData(showLoading: false);
+      _fetchReviews();
     });
+    _qrTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      if (_qrSeconds <= 1) {
+        _refreshSecureEpoch();
+      } else {
+        setState(() => _qrSeconds--);
+      }
+    });
+  }
+
+  Future<void> _refreshSecureEpoch() async {
+    try {
+      final sessionId = widget.sessionData['session_id'].toString();
+      final epoch = await _sessionService.getSecureEpoch(sessionId);
+      if (epoch != null && mounted) {
+        setState(() {
+          _secureQr = epoch['qr_payload']?.toString();
+          _captcha = epoch['captcha']?.toString() ?? '----';
+          final expiresAt = (epoch['expires_at'] as num?)?.toDouble() ?? 0;
+          final serverTime = (epoch['server_time'] as num?)?.toDouble() ?? 0;
+          final diff = (expiresAt - serverTime).ceil();
+          _qrSeconds = diff > 0 ? diff.clamp(1, 20) : 20;
+        });
+      }
+    } catch (e) {
+      print('Error in _refreshSecureEpoch: $e');
+    }
+  }
+
+  Future<void> _fetchReviews() async {
+    try {
+      final reviews = await _sessionService.getPendingReviews(widget.sessionData['session_id']);
+      if (mounted) setState(() => _reviews = reviews);
+    } catch (_) {}
   }
 
   Future<void> _fetchAttendanceData({bool showLoading = true}) async {
@@ -515,43 +560,339 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF007C91), width: 3),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF007C91).withOpacity(0.3), width: 2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: const Color(0xFF007C91).withOpacity(0.12),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
       child: Column(
         children: [
-          QrImageView(
-            data: widget.qrCodeData,
-            version: QrVersions.auto,
-            size: size,
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF007C91),
+          // Live Attendance Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE0F7FA),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.shield, color: Color(0xFF007C91), size: 18),
+                SizedBox(width: 8),
+                Text(
+                  'LIVE ATTENDANCE',
+                  style: TextStyle(
+                    color: Color(0xFF007C91),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            "Scan to Mark Attendance",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1F2937),
+
+          // Dynamic Rotating QR Code
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: QrImageView(
+              data: _secureQr == null
+                  ? widget.qrCodeData
+                  : jsonEncode({
+                      'sessionId': widget.sessionData['session_id'].toString(),
+                      'payload': _secureQr,
+                    }),
+              version: QrVersions.auto,
+              size: size,
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF00695C),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            "Session ID: ${widget.sessionData['session_id'].toString().substring(0, 8)}...",
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+          const SizedBox(height: 16),
+
+          // Countdown pill
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.amber.shade400),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    value: _qrSeconds / 20.0,
+                    strokeWidth: 2.5,
+                    color: Colors.amber.shade800,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Refreshes in ${_qrSeconds}s',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber.shade900,
+                  ),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 16),
+
+          // Classroom CAPTCHA Display
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF22C55E), width: 1.5),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _captcha.split('').map((char) {
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        char,
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF15803D),
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Classroom CAPTCHA',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF166534),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Status Badges
+          const Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.center,
+            children: [
+              _StatusPill(text: '● SESSION ACTIVE', color: Colors.green),
+              _StatusPill(text: '● QR SECURE', color: Colors.teal),
+              _StatusPill(text: '● REAL-TIME CONNECTED', color: Colors.blue),
+            ],
+          ),
+
+          if (_reviews.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.amber.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: _showReviewQueue,
+              icon: const Icon(Icons.fact_check, size: 20),
+              label: Text(
+                '${_reviews.length} Teacher Review Required',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Future<void> _showReviewQueue() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.verified_user, color: Color(0xFF007C91)),
+                      SizedBox(width: 8),
+                      Text(
+                        'ATTENDANCE CROSS-VERIFICATION',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              if (_reviews.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: Text('No pending cross-verification requests')),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _reviews.length,
+                    separatorBuilder: (_, __) => const Divider(height: 24),
+                    itemBuilder: (context, index) {
+                      final review = _reviews[index];
+                      final matrix = Map<String, dynamic>.from(review['verification'] ?? {});
+                      final studentName = review['student_name'] ?? 'Student';
+                      final rollNo = review['roll_no'] ?? 'N/A';
+
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  studentName,
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Roll No: $rollNo',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'VERIFICATION DETAILS',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                _GateBadge(label: 'QR Authenticity', passed: matrix['qr_authenticity'] == 'pass'),
+                                _GateBadge(label: 'QR Freshness', passed: matrix['qr_freshness'] == 'pass'),
+                                _GateBadge(label: 'Session Validation', passed: matrix['session'] == 'pass'),
+                                _GateBadge(label: 'Student Eligibility', passed: matrix['student_eligibility'] == 'pass'),
+                                _GateBadge(label: 'Device Validation', passed: matrix['device'] == 'pass'),
+                                _GateBadge(label: 'Numeric CAPTCHA', passed: matrix['captcha'] == 'pass'),
+                                _GateBadge(label: 'Gyroscope', passed: matrix['gyroscope'] == 'pass'),
+                                _GateBadge(label: 'Accelerometer', passed: matrix['accelerometer'] == 'pass'),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red.shade700,
+                                    side: BorderSide(color: Colors.red.shade300),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.close, size: 18),
+                                  label: const Text('DO NOT MARK PRESENT'),
+                                  onPressed: () async {
+                                    await _sessionService.resolveReview(review['record_id'], 'reject');
+                                    if (mounted) Navigator.pop(context);
+                                    _fetchReviews();
+                                  },
+                                ),
+                                const SizedBox(width: 12),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.green.shade600,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.check, size: 18),
+                                  label: const Text('MARK PRESENT'),
+                                  onPressed: () async {
+                                    await _sessionService.resolveReview(review['record_id'], 'present');
+                                    if (mounted) Navigator.pop(context);
+                                    _fetchReviews();
+                                    _fetchAttendanceData(showLoading: false);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -743,6 +1084,72 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _StatusPill({required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _GateBadge extends StatelessWidget {
+  final String label;
+  final bool passed;
+
+  const _GateBadge({required this.label, required this.passed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: passed ? Colors.green.shade50 : Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: passed ? Colors.green.shade300 : Colors.red.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            passed ? Icons.check_circle : Icons.cancel,
+            size: 16,
+            color: passed ? Colors.green.shade700 : Colors.red.shade700,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: passed ? Colors.green.shade900 : Colors.red.shade900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

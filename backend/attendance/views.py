@@ -24,7 +24,9 @@ from .serializers import (
     TeacherAttendanceHistorySerializer,
     UpdateAttendanceStatusSerializer,
 )
-from .models import Class, Enrollment, StudentProfile, AttendanceSession, AttendanceRecord
+from .models import (Class, Enrollment, StudentProfile, AttendanceSession, AttendanceRecord,
+                     RegisteredDevice, AttendanceVerification, AttendanceAuditEvent)
+from .secure_attendance import issue_epoch, validate_qr, validate_captcha, validate_sensor_summary
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -1114,7 +1116,7 @@ def get_session_details(request, session_id):
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def mark_attendance(request, session_id):
-    """Student marks attendance by scanning QR code"""
+    """Evaluate every required check; only the backend may mark present."""
     user = request.user
     
     if user.role != 'student':
@@ -1152,28 +1154,143 @@ def mark_attendance(request, session_id):
             status=status.HTTP_403_FORBIDDEN
         )
     
-    # Check if already marked
+    # Idempotent result: never create a second attendance for the same student/session.
     existing_record = AttendanceRecord.objects.filter(session=session, student=user).first()
     if existing_record:
         return Response({
-            'error': 'Attendance already marked',
+            'message': 'Existing attendance result returned',
             'marked_at': existing_record.marked_at,
-            'status': existing_record.status
-        }, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Mark attendance
-    record = AttendanceRecord.objects.create(
-        session=session,
-        student=user,
-        status='present'
-    )
-    
+            'status': existing_record.status,
+            'final_status': getattr(getattr(existing_record, 'verification', None), 'final_status', None),
+        })
+
+    qr_authentic, qr_fresh, epoch = validate_qr(request.data.get('qr_payload', ''), session)
+    enrolled = Enrollment.objects.filter(class_obj=session.class_obj, student=user).exists()
+    session_valid = session.status == 'active' and session.is_active
+    raw_device_id = request.data.get('device_id', '')
+    device_hash = __import__('hashlib').sha256(raw_device_id.encode()).hexdigest() if raw_device_id else ''
+    device = RegisteredDevice.objects.filter(user=user, device_id_hash=device_hash, is_active=True).first()
+    captcha_ok = validate_captcha(session, epoch, user.id, request.data.get('captcha')) if epoch is not None else False
+    gyro = validate_sensor_summary(request.data.get('gyroscope'), 'gyroscope')
+    accel = validate_sensor_summary(request.data.get('accelerometer'), 'accelerometer')
+    matrix = {
+        'qr_result': 'pass' if qr_authentic else 'fail',
+        'qr_freshness_result': 'pass' if qr_fresh else 'fail',
+        'session_result': 'pass' if session_valid else 'fail',
+        'student_eligibility_result': 'pass' if enrolled else 'fail',
+        'device_result': 'pass' if device else 'fail',
+        'captcha_result': 'pass' if captcha_ok else 'fail',
+        'gyroscope_result': gyro,
+        'accelerometer_result': accel,
+    }
+    all_pass = all(value == 'pass' for value in matrix.values())
+    with transaction.atomic():
+        record = AttendanceRecord.objects.create(
+            session=session, student=user, status='present' if all_pass else 'pending_review')
+        verification = AttendanceVerification.objects.create(
+            attendance=record, device=device, final_status='verified' if all_pass else 'teacher_review_required', **matrix)
+        AttendanceAuditEvent.objects.create(
+            attendance=record, actor=user, event_type='attendance.verified' if all_pass else 'attendance.cross_verification_requested',
+            details={'matrix': matrix})
     return Response({
-        'message': f'Attendance marked for {session.class_obj.class_code}',
-        'class': session.class_obj.class_name,
-        'marked_at': record.marked_at,
-        'status': 'present'
+        'message': 'Attendance marked present' if all_pass else 'Additional verification required',
+        'status': record.status, 'final_status': verification.final_status, 'verification': matrix,
     }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_secure_epoch(request, session_id):
+    if request.user.role != 'teacher':
+        return Response({'error': 'Only teachers can display secure attendance codes'}, status=403)
+    try:
+        session = AttendanceSession.objects.get(session_id=session_id, teacher=request.user, status='active')
+    except AttendanceSession.DoesNotExist:
+        return Response({'error': 'Active session not found'}, status=404)
+    return Response(issue_epoch(session))
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_pending_reviews(request, session_id):
+    if request.user.role != 'teacher':
+        return Response({'error': 'Only teachers can view reviews'}, status=403)
+    reviews = AttendanceRecord.objects.filter(
+        session__session_id=session_id,
+        session__teacher=request.user,
+        verification__final_status='teacher_review_required',
+    ).select_related('student__student_profile', 'session__class_obj', 'verification')
+    data = []
+    for record in reviews:
+        verification = record.verification
+        matrix = {
+            'qr_authenticity': verification.qr_result,
+            'qr_freshness': verification.qr_freshness_result,
+            'session': verification.session_result,
+            'student_eligibility': verification.student_eligibility_result,
+            'device': verification.device_result,
+            'captcha': verification.captcha_result,
+            'gyroscope': verification.gyroscope_result,
+            'accelerometer': verification.accelerometer_result,
+        }
+        data.append({
+            'record_id': record.id,
+            'student_name': record.student.get_full_name() or record.student.username,
+            'roll_no': getattr(getattr(record.student, 'student_profile', None), 'roll_no', ''),
+            'subject': record.session.class_obj.class_name,
+            'requested_at': record.marked_at,
+            'verification': matrix,
+        })
+    return Response({'reviews': data})
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def register_device(request):
+    if request.user.role not in ('student', 'teacher', 'admin'):
+        return Response({'error': 'Unsupported account role'}, status=403)
+    raw_device_id = request.data.get('device_id', '')
+    if len(raw_device_id) < 16:
+        return Response({'error': 'A stable device identifier is required'}, status=400)
+    device_hash = __import__('hashlib').sha256(raw_device_id.encode()).hexdigest()
+    existing = RegisteredDevice.objects.filter(user=request.user, device_id_hash=device_hash).first()
+    if existing:
+        if not existing.is_active:
+            return Response({'error': 'This device is inactive'}, status=403)
+        return Response({'authorized': True})
+    limit = 1 if request.user.role == 'student' else 2
+    if RegisteredDevice.objects.filter(user=request.user, is_active=True).count() >= limit:
+        return Response({'error': 'Device limit reached; existing devices are not replaced automatically'}, status=403)
+    RegisteredDevice.objects.create(user=request.user, device_id_hash=device_hash,
+                                    device_name=request.data.get('device_name', '')[:120])
+    return Response({'authorized': True}, status=201)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def resolve_cross_verification(request, record_id):
+    if request.user.role != 'teacher':
+        return Response({'error': 'Only teachers can resolve reviews'}, status=403)
+    decision = request.data.get('decision')
+    if decision not in ('present', 'reject'):
+        return Response({'error': 'decision must be present or reject'}, status=400)
+    with transaction.atomic():
+        try:
+            record = AttendanceRecord.objects.select_for_update().select_related('verification').get(
+                id=record_id, session__teacher=request.user,
+                verification__final_status='teacher_review_required')
+        except AttendanceRecord.DoesNotExist:
+            return Response({'error': 'Pending review not found'}, status=404)
+        record.status = 'present' if decision == 'present' else 'absent'
+        record.save(update_fields=('status',))
+        verification = record.verification
+        verification.final_status = 'teacher_cross_verified' if decision == 'present' else 'teacher_rejected'
+        verification.teacher = request.user
+        verification.teacher_decision_at = timezone.now()
+        verification.save()
+        AttendanceAuditEvent.objects.create(attendance=record, actor=request.user,
+                                            event_type='attendance.cross_verification_resolved', details={'decision': decision})
+    return Response({'status': record.status, 'final_status': verification.final_status})
 
 
 @api_view(['POST'])

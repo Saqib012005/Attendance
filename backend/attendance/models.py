@@ -67,6 +67,7 @@ class Enrollment(models.Model):
     """Table for student enrollments in classes"""
     class_obj = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='enrollments')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='enrolled_classes', limit_choices_to={'role': 'student'})
+    status = models.CharField(max_length=20, default='enrolled')
     enrolled_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -97,6 +98,12 @@ class AttendanceSession(models.Model):
     
     qr_code_data = models.TextField()  # JSON string with session info
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+    class_type = models.CharField(max_length=10, default='online', blank=True)
+    board_type = models.CharField(max_length=20, default='none', blank=True)
+    reference_image = models.ImageField(upload_to='reference_images/', null=True, blank=True)
+    instruction_card = models.TextField(blank=True, null=True)
+    pattern_code = models.CharField(max_length=50, blank=True, null=True)
+    shape_data = models.TextField(blank=True, null=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -123,10 +130,12 @@ class AttendanceRecord(models.Model):
     
     marked_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
-        max_length=10,
-        choices=(('present', 'Present'), ('absent', 'Absent')),
+        max_length=20,
+        choices=(('present', 'Present'), ('absent', 'Absent'), ('flagged', 'Flagged')),
         default='present'
     )
+    verification_reasons = models.TextField(blank=True, null=True)
+    verification_score = models.FloatField(blank=True, null=True)
     
     class Meta:
         db_table = 'attendance_records'
@@ -135,3 +144,58 @@ class AttendanceRecord(models.Model):
 
     def __str__(self):
         return f"{self.student.username} - {self.session.class_obj.class_code} - {self.status}"
+
+
+class RegisteredDevice(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='registered_devices')
+    device_id_hash = models.CharField(max_length=64)
+    device_name = models.CharField(max_length=120, blank=True)
+    is_active = models.BooleanField(default=True)
+    registered_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'registered_devices'
+        constraints = [
+            models.UniqueConstraint(fields=('user', 'device_id_hash'), name='unique_user_device'),
+        ]
+
+
+class AttendanceVerification(models.Model):
+    RESULT_CHOICES = tuple((value, value.title()) for value in ('pass', 'fail', 'unavailable', 'timeout', 'invalid'))
+    FINAL_CHOICES = (
+        ('teacher_review_required', 'Teacher Review Required'),
+        ('verified', 'Verified'),
+        ('teacher_cross_verified', 'Teacher Cross Verified'),
+        ('teacher_rejected', 'Teacher Rejected'),
+    )
+    attendance = models.OneToOneField(AttendanceRecord, on_delete=models.CASCADE, related_name='verification')
+    device = models.ForeignKey(RegisteredDevice, on_delete=models.SET_NULL, null=True, blank=True)
+    qr_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    qr_freshness_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    session_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    student_eligibility_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    device_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    captcha_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    gyroscope_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    accelerometer_result = models.CharField(max_length=20, choices=RESULT_CHOICES)
+    final_status = models.CharField(max_length=40, choices=FINAL_CHOICES)
+    teacher = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='attendance_reviews')
+    teacher_decision_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'attendance_verifications'
+
+
+class AttendanceAuditEvent(models.Model):
+    attendance = models.ForeignKey(AttendanceRecord, on_delete=models.CASCADE, related_name='audit_events')
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    event_type = models.CharField(max_length=80)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'attendance_audit_events'
+        ordering = ('created_at',)
