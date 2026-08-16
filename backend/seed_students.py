@@ -44,6 +44,6 @@ for i in range(1, 21):
     student.save()
     StudentProfile.objects.update_or_create(student=student, defaults={'roll_no': roll})
     for c in classes:
-        Enrollment.objects.update_or_create(student=student, class_obj=c, defaults={'status': 'enrolled'})
+        Enrollment.objects.get_or_create(student=student, class_obj=c)
 
 print("All 20 student accounts (student1@example.com to student20@example.com) created and enrolled!")

@@ -67,7 +67,6 @@ class Enrollment(models.Model):
     """Table for student enrollments in classes"""
     class_obj = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='enrollments')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='enrolled_classes', limit_choices_to={'role': 'student'})
-    status = models.CharField(max_length=20, default='enrolled')
     enrolled_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
