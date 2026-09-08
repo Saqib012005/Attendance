@@ -26,11 +26,53 @@ from .serializers import (
     UpdateAttendanceStatusSerializer,
     AnnouncementSerializer,
 )
-from .models import Class, Enrollment, StudentProfile, AttendanceSession, AttendanceRecord, Announcement
+from .models import Class, Enrollment, StudentProfile, AttendanceSession, AttendanceRecord, Announcement, PresenceSession
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
+
+# Tolerance for device/server clock disagreement when judging a client-supplied
+# offline scan timestamp. Named here rather than inlined at the call sites; it
+# moves into presence/config/ with the rest of the tuned parameters in Phase 1.
+OFFLINE_CLOCK_SKEW_ALLOWANCE = timedelta(minutes=5)
+
+
+def resolve_offline_scan_time(session, timestamp_str):
+    """
+    Turn a client-supplied offline scan timestamp into a trustworthy mark time.
+
+    The client's claim is evidence, not authority: any device can put any value
+    in the payload, and `marked_at` feeds punctuality, latency and post-session
+    integrity checks. The claim is therefore honoured only when it is consistent
+    with the session it claims to belong to - inside [start_time, end_time], and
+    not in the future beyond clock skew. Anything else falls back to the server's
+    own receipt time, and the reason is returned so the rejected claim can be
+    recorded rather than silently dropped.
+
+    Returns (scan_time_or_None, reject_reason_or_None). A None scan time means
+    "let the server clock stand", never "backdate freely".
+    """
+    if not timestamp_str:
+        return None, None
+
+    claimed = parse_datetime(timestamp_str) if isinstance(timestamp_str, str) else None
+    if claimed is None:
+        return None, 'offline_timestamp_unparseable'
+
+    if timezone.is_naive(claimed):
+        claimed = timezone.make_aware(claimed, timezone.get_default_timezone())
+
+    now = timezone.now()
+    if claimed > now + OFFLINE_CLOCK_SKEW_ALLOWANCE:
+        return None, 'offline_timestamp_in_future'
+    if claimed < session.start_time - OFFLINE_CLOCK_SKEW_ALLOWANCE:
+        return None, 'offline_timestamp_before_session_start'
+    if claimed > session.end_time + OFFLINE_CLOCK_SKEW_ALLOWANCE:
+        return None, 'offline_timestamp_after_session_end'
+
+    return claimed, None
+
 
 class RegisterView(generics.CreateAPIView):
     """Public endpoint for new user registration"""
@@ -463,21 +505,39 @@ def create_session(request):
     }
     
     # Create session
-    session = AttendanceSession.objects.create(
-        session_id=session_uuid,
-        class_obj=class_obj,
-        teacher=user,
-        start_time=start_time,
-        duration_minutes=duration_minutes,
-        end_time=end_time,
-        qr_code_data=json.dumps(qr_data),
-        class_type=class_type,
+    #
+    # The two halves are created together or not at all. A session without its
+    # presence row would display challenges nobody can verify and answer every
+    # proof submitted against it with 404; a presence row without its session
+    # would hold key material for a lesson that does not exist. Nothing else in
+    # this view writes, so the transaction is exactly these two statements.
+    with transaction.atomic():
+        session = AttendanceSession.objects.create(
+            session_id=session_uuid,
+            class_obj=class_obj,
+            teacher=user,
+            start_time=start_time,
+            duration_minutes=duration_minutes,
+            end_time=end_time,
+            qr_code_data=json.dumps(qr_data),
+            class_type=class_type,
 
-        pattern_code=pattern_code,
-        instruction_card=instruction_card,
-        shape_data=shape_combo,
-        status=session_status
-    )
+            pattern_code=pattern_code,
+            instruction_card=instruction_card,
+            shape_data=shape_combo,
+            status=session_status
+        )
+        # Open the presence layer for this session. This is what gives the session
+        # its own root secret, its own signing key and the configuration version it
+        # will be judged under for as long as proofs keep arriving for it. Without
+        # this call the presence endpoint is unreachable and attendance falls back
+        # to the unsigned payload below, where possessing `session_id` is enough.
+        #
+        # `qr_code_data` is deliberately left as it is. The shipped client parses
+        # that JSON, so changing the payload here would break every installed app
+        # before Phase 2 replaces the scanner. The signed challenge is served by its
+        # own endpoint alongside it, and the two coexist until the client moves.
+        PresenceSession.open(session)
 
     
     response_serializer = SessionSerializer(session)
@@ -607,9 +667,7 @@ def mark_attendance(request, session_id):
     is_offline_sync = request.data.get('is_offline_sync', False)
     timestamp_str = request.data.get('timestamp')
     scan_time = None
-    if is_offline_sync and timestamp_str:
-        from django.utils.dateparse import parse_datetime
-        scan_time = parse_datetime(timestamp_str)
+    scan_time_reject_reason = None
     
     # Check if session is active (unless offline sync)
     if not is_offline_sync:
@@ -633,6 +691,22 @@ def mark_attendance(request, session_id):
             status=status.HTTP_403_FORBIDDEN
         )
     
+    # Anti-Proxy Security Gate: Validate rolling QR timestamp
+    qr_timestamp = request.data.get('qr_timestamp')
+    if qr_timestamp is not None:
+        try:
+            qr_ts_sec = float(qr_timestamp) / 1000.0 if float(qr_timestamp) > 1e11 else float(qr_timestamp)
+            now_sec = timezone.now().timestamp()
+            elapsed_sec = now_sec - qr_ts_sec
+            # Allow 18 seconds max (10s step + 8s camera/network margin)
+            if elapsed_sec > 18.0 or elapsed_sec < -10.0:
+                return Response(
+                    {'error': f'REFUSED: QR Code expired ({int(elapsed_sec)}s old). Forwarded photos & screenshots are blocked by Anti-Proxy.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except (ValueError, TypeError):
+            pass
+
     # Check 24-hour expiration for offline syncs
     if is_offline_sync:
         time_diff = timezone.now() - session.start_time
@@ -642,12 +716,23 @@ def mark_attendance(request, session_id):
                 status=status.HTTP_400_BAD_REQUEST
             )
     
+    # Resolve the claimed offline scan time now that the session is known. The
+    # client's timestamp is never written to marked_at unverified.
+    if is_offline_sync:
+        scan_time, scan_time_reject_reason = resolve_offline_scan_time(
+            session, timestamp_str
+        )
+
     # Check if already marked
     existing_record = AttendanceRecord.objects.filter(session=session, student=user).first()
     if existing_record:
         if is_offline_sync and existing_record.status == 'absent':
             # Allow offline sync to overwrite 'absent' with 'present'
             existing_record.status = 'present'
+            if scan_time_reject_reason:
+                existing_record.verification_reasons = json.dumps(
+                    [scan_time_reject_reason]
+                )
             existing_record.save()
             if scan_time:
                 AttendanceRecord.objects.filter(id=existing_record.id).update(marked_at=scan_time)
@@ -669,7 +754,10 @@ def mark_attendance(request, session_id):
     record = AttendanceRecord.objects.create(
         session=session,
         student=user,
-        status='present'
+        status='present',
+        verification_reasons=(
+            json.dumps([scan_time_reject_reason]) if scan_time_reject_reason else None
+        ),
     )
     if scan_time:
         AttendanceRecord.objects.filter(id=record.id).update(marked_at=scan_time)
@@ -832,9 +920,8 @@ def verify_image(request):
             verification_reasons=json.dumps(reasons)
         )
 
-        if scan_time:
-            AttendanceRecord.objects.filter(id=record.id).update(marked_at=scan_time)
-            record.refresh_from_db()
+        # No timestamp handling here: verify_image is the live online path, so
+        # marked_at is the server's own receipt time.
 
         if not matched:
             return Response({
@@ -958,38 +1045,57 @@ def sync_offline_session(request):
         # Reload session to have correct times
         session = AttendanceSession.objects.get(session_id=session_uuid)
 
-        # Bulk mark absent students (or present if > 24 hours)
+        # Fill in the students who never produced a mark for this session.
+        #
+        # They are recorded as absent, unconditionally. A missing mark is the
+        # absence of evidence, never evidence of presence: the previous rule
+        # ('present' once the session was more than 24 hours old) meant a teacher
+        # who synced a day late marked the entire unmarked roster present, which
+        # is both a fabricated value and a trivially abusable one.
         enrolled_students = Enrollment.objects.filter(
             class_obj=class_obj
         ).select_related('student')
-        
+
         already_marked = AttendanceRecord.objects.filter(
             session=session
         ).values_list('student_id', flat=True)
-        
-        absent_students = enrolled_students.exclude(
+
+        unmarked_students = enrolled_students.exclude(
             student_id__in=already_marked
         )
-        
-        # 24-hour rule check
-        time_diff = timezone.now() - session.start_time
-        is_expired = time_diff.total_seconds() > (24 * 3600)
-        default_status = 'present' if is_expired else 'absent'
-        
-        absent_records = []
-        for enrollment in absent_students:
-            absent_records.append(
-                AttendanceRecord(
-                    session=session,
-                    student=enrollment.student,
-                    status=default_status
-                )
+
+        absent_records = [
+            AttendanceRecord(
+                session=session,
+                student=enrollment.student,
+                status='absent',
             )
-        
+            for enrollment in unmarked_students
+        ]
+
         if absent_records:
             AttendanceRecord.objects.bulk_create(absent_records)
 
-        return Response({'message': 'Offline session synced successfully'}, status=status.HTTP_201_CREATED)
+        # Students sync their own offline marks within 24 hours of session start.
+        # Past that, their queued marks are rejected, so say plainly that the
+        # absences may be incomplete rather than papering over it.
+        sync_window_closed = (
+            timezone.now() - session.start_time
+        ).total_seconds() > (24 * 3600)
+
+        payload = {
+            'message': 'Offline session synced successfully',
+            'marked_absent': len(absent_records),
+        }
+        if sync_window_closed:
+            payload['warning'] = (
+                'This session was synced more than 24 hours after it started. '
+                'Students can no longer sync their own offline marks, so any '
+                'student who attended but never synced is recorded as absent '
+                'and needs a manual correction.'
+            )
+
+        return Response(payload, status=status.HTTP_201_CREATED)
     except Class.DoesNotExist:
         return Response({'error': 'Class not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
@@ -1014,8 +1120,20 @@ def sync_offline_pattern(request):
     scan_time = parse_datetime(timestamp_str)
     if not scan_time:
         return Response({'error': 'Invalid timestamp format'}, status=status.HTTP_400_BAD_REQUEST)
+    if timezone.is_naive(scan_time):
+        scan_time = timezone.make_aware(scan_time, timezone.get_default_timezone())
 
-    # Find the session active at that time for this student
+    # A scan cannot have happened in the future. Without this guard a client can
+    # pre-mark a session that has not started yet by claiming a future time, and
+    # the 24-hour window check below passes because the delta is negative.
+    if scan_time > timezone.now() + OFFLINE_CLOCK_SKEW_ALLOWANCE:
+        return Response(
+            {'error': 'Invalid timestamp: scan time is in the future'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Find the session active at that time for this student. The window bounds
+    # the claim: start_time <= scan_time <= end_time of a real session.
     enrolled_class_ids = Enrollment.objects.filter(student=user).values_list('class_obj_id', flat=True)
     
     session = AttendanceSession.objects.filter(
@@ -1081,6 +1199,34 @@ def sync_offline_pattern(request):
         return Response({'error': f"Backend Error: {str(e)}", 'trace': traceback.format_exc()}, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _close_presence(session):
+    """Close a session's presence row, if it has one. Never raises on absence."""
+    presence = getattr(session, 'presence', None)
+    if presence is None:
+        return
+    presence.close(when=session.end_time or timezone.now())
+    _prune_replay_ledger()
+
+
+def _prune_replay_ledger():
+    """Forget replay entries past their retention, at a moment that already writes.
+
+    The ledger has to be pruned by something. Nothing did, so entries accumulated
+    for the life of the deployment - a permanent record of every submission, which
+    the retention rules do not allow, and an index that only ever grows.
+
+    Session close is the right moment rather than the proof endpoint: it is
+    infrequent, it is already inside a write, and it does not add a delete to the
+    hot path. The horizon comes from `replay.retention_horizon`, which is longer
+    than the offline allowance by a cross-check the config registry enforces, so
+    this can never forget a nonce a still-acceptable proof could reuse.
+    """
+    from .presence import replay
+    from .presence_ledger import DjangoLedger
+    now = int(timezone.now().timestamp())
+    DjangoLedger().prune(replay.retention_horizon(now))
+
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def end_session(request, session_id):
@@ -1100,7 +1246,11 @@ def end_session(request, session_id):
     
     if session.status != 'active':
         if session.status == 'completed':
-            # This happens if the session was created offline and synced in the background
+            # This happens if the session was created offline and synced in the background.
+            # A session that reached 'completed' by some other route still needs its
+            # presence half closed, and this call is idempotent, so doing it here
+            # costs nothing and closes the one path that would otherwise skip it.
+            _close_presence(session)
             enrolled_students = Enrollment.objects.filter(
                 class_obj=session.class_obj
             ).select_related('student')
@@ -1165,6 +1315,16 @@ def end_session(request, session_id):
         session.status = 'completed'
         session.end_time = timezone.now()
         session.save()
+
+        # Close the presence half in the same transaction. Two properties depend
+        # on this call and neither is optional: the session-open gate refuses a
+        # proof whose step window begins after `closed_at`, so a presence session
+        # that never closes leaves that gate inert; and the raw radio
+        # observations behind each decision are dropped here, which is what stops
+        # them accumulating into a permanent record of where students have been.
+        # Not every session has a presence row - only ones created through the
+        # presence path do - so absence is normal rather than an error.
+        _close_presence(session)
     
     # Get final statistics
     total_students = enrolled_students.count()
@@ -1747,18 +1907,30 @@ def join_class_by_code(request):
 def assetlinks_json(request):
     """
     Serve the assetlinks.json file required for Android App Links (Deep Linking).
+
+    Package name and fingerprints come from settings (ANDROID_APP_PACKAGE,
+    ANDROID_CERT_FINGERPRINTS), not from literals here. They used to be
+    hardcoded, and the fingerprint that was served matched no key this project
+    could produce - release builds were signed with the machine-local debug
+    keystore, whose fingerprint differs per machine. So App Links verification
+    was asserting a key nobody held.
+
+    An unconfigured fingerprint list yields an empty list. That is deliberate:
+    App Links verification then simply fails, which is the honest outcome, rather
+    than appearing to succeed against a wrong certificate.
     """
+    from django.conf import settings
     from django.http import JsonResponse
     return JsonResponse([{
         "relation": ["delegate_permission/common.handle_all_urls"],
         "target": {
             "namespace": "android_app",
-            "package_name": "com.example.attendance_app",
-            "sha256_cert_fingerprints": [
-                "87:17:E3:5D:41:92:69:09:62:28:72:43:E3:68:77:C8:BF:2C:F4:BA:97:47:37:DE:B4:52:D2:4D:6B:94:83:C9"
-            ]
+            "package_name": settings.ANDROID_APP_PACKAGE,
+            "sha256_cert_fingerprints": list(settings.ANDROID_CERT_FINGERPRINTS),
         }
     }], safe=False)
+
+
 @api_view(['PATCH'])
 @permission_classes([permissions.IsAuthenticated])
 def edit_session(request, session_id):
@@ -1877,16 +2049,20 @@ def announcements_list_create(request):
                 
                 recipients_list = []
                 for student in enrolled_users:
-                    if total_sessions > 0:
-                        present_count = AttendanceRecord.objects.filter(
-                            session__class_obj=target_class,
-                            student=student,
-                            status='present'
-                        ).count()
-                        rate = (present_count / total_sessions) * 100
-                    else:
-                        rate = 100.0
-                        
+                    # With no sessions there is no attendance rate. Reporting
+                    # 0/0 as 100% invented a perfect record; the honest answer is
+                    # "unknown", and an unknown rate cannot be below a threshold,
+                    # so the student is simply not targeted.
+                    if total_sessions == 0:
+                        continue
+
+                    present_count = AttendanceRecord.objects.filter(
+                        session__class_obj=target_class,
+                        student=student,
+                        status='present'
+                    ).count()
+                    rate = (present_count / total_sessions) * 100
+
                     if rate < threshold:
                         recipients_list.append(student)
                 

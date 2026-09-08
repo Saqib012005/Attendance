@@ -1,0 +1,33 @@
+# Release signing material for CampusGuard Android builds.
+#
+# Copy to `key.properties` (same directory) and fill in. The real file is
+# gitignored and must never be committed; this example exists so the four key
+# names are discoverable without reading build.gradle.kts.
+#
+# Generate a keystore first. Use a 2048-bit RSA key with a long validity,
+# because Android will not let you change signing identity after publishing
+# (short of Play's key-upgrade flow):
+#
+#   keytool -genkeypair -v \
+#     -keystore campusguard-release.jks \
+#     -alias campusguard \
+#     -keyalg RSA -keysize 2048 -validity 10000
+#
+# Keep the .jks OUTSIDE the repository. If you lose it you cannot ship an
+# update to an app signed with it.
+#
+# `storeFile` is resolved relative to the `android/` directory, so an absolute
+# path or one starting `../../` is usually what you want.
+
+storeFile=/absolute/path/to/campusguard-release.jks
+storePassword=CHANGE_ME
+keyAlias=campusguard
+keyPassword=CHANGE_ME
+
+# After a release build, read the certificate fingerprint that the backend's
+# App Links declaration must publish:
+#
+#   keytool -list -v -keystore campusguard-release.jks -alias campusguard
+#
+# and set it as ANDROID_CERT_FINGERPRINTS on the backend. If you use Play App
+# Signing, use the fingerprint Play reports instead - Play re-signs your upload.

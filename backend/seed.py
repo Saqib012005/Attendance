@@ -27,7 +27,30 @@ from attendance.models import (
 User = get_user_model()
 
 
-def seed_database(reset=False, default_password="password123"):
+def seed_database(reset=False, default_password=None):
+    """Plant demo data.
+
+    Two guards, both added because this ran on every production boot.
+    `startup.sh` and the Dockerfile CMD each called it unconditionally, and the
+    `set_password` below is unconditional too, so every restart reset
+    admin@example.com to a password that was then printed to the App Service log
+    stream - against a publicly routed /admin/. Seeding is a development
+    convenience and it now refuses to run anywhere it was not explicitly invited.
+    """
+    from django.conf import settings
+
+    if not settings.DEBUG and os.getenv('SEED_ALLOW_PRODUCTION') != '1':
+        raise SystemExit(
+            "refusing to seed: DEBUG is off and SEED_ALLOW_PRODUCTION is not '1'. "
+            "Seed data creates known-credential accounts, including a superuser."
+        )
+
+    if not default_password:
+        raise SystemExit(
+            "refusing to seed: no password supplied. Pass --password or set "
+            "SEED_PASSWORD. There is deliberately no default."
+        )
+
     print("========================================")
     print("    Planting Attendance Seed Data      ")
     print("========================================")
@@ -200,13 +223,15 @@ def seed_database(reset=False, default_password="password123"):
     print("\n========================================")
     print("    Seed Data Planted Successfully!     ")
     print("========================================")
-    print("Summary Credentials:")
-    print(f"  Admin:    admin@example.com / {default_password}")
-    print(f"  Teacher:  teacher@example.com / {default_password}")
-    print(f"  Teacher:  prof_davis@example.com / {default_password}")
-    print(f"  Student:  student@example.com / {default_password} (Roll: TEST001)")
-    print(f"  Student:  alice@example.com / {default_password} (Roll: TEST002)")
-    print(f"  Student:  bob@example.com / {default_password} (Roll: TEST003)")
+    # The password is deliberately not echoed. On App Service this print went
+    # to the log stream, which is where a shared credential stops being local.
+    print("Seeded accounts (password is the one you supplied, not shown):")
+    print("  Admin:    admin@example.com")
+    print("  Teacher:  teacher@example.com")
+    print("  Teacher:  prof_davis@example.com")
+    print("  Student:  student@example.com (Roll: TEST001)")
+    print("  Student:  alice@example.com (Roll: TEST002)")
+    print("  Student:  bob@example.com (Roll: TEST003)")
     print("----------------------------------------")
     print(f"  Primary Class ID: {main_class.id} (Code: {main_class.class_code})")
     print(f"  Active Session:   {session.session_id}")
@@ -216,7 +241,12 @@ def seed_database(reset=False, default_password="password123"):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Plant seed data for Attendance App.")
     parser.add_argument('--reset', action='store_true', help="Reset/clear existing seed data before planting.")
-    parser.add_argument('--password', type=str, default="password123", help="Default password for seeded accounts.")
+    parser.add_argument(
+        '--password',
+        type=str,
+        default=os.getenv('SEED_PASSWORD'),
+        help="Password for seeded accounts. No default: set SEED_PASSWORD or pass this.",
+    )
     args = parser.parse_args()
 
     seed_database(reset=args.reset, default_password=args.password)

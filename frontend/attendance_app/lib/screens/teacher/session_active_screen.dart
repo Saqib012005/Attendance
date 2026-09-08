@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -28,7 +29,11 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
 
   Timer? _countdownTimer;
   Timer? _refreshTimer;
+  Timer? _qrRollingTimer;
   int remainingSeconds = 0;
+  int _qrRollingSecondsLeft = 10;
+  int _qrStep = 1;
+  String? _currentDynamicQrData;
 
   List<Map<String, dynamic>> students = [];
   Map<String, dynamic> statistics = {};
@@ -44,6 +49,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
   void initState() {
     super.initState();
     _initializeSession();
+    _startRollingQr();
     _startAutoRefresh();
     _syncSubscription = SyncService().onSyncComplete.listen((_) {
       if (mounted) {
@@ -66,12 +72,52 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
     });
   }
 
+  void _startRollingQr() {
+    _updateRollingQrData();
+    _qrRollingTimer?.cancel();
+    _qrRollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() {
+        if (_qrRollingSecondsLeft <= 1) {
+          _qrRollingSecondsLeft = 10;
+          _qrStep++;
+          _updateRollingQrData();
+        } else {
+          _qrRollingSecondsLeft--;
+        }
+      });
+    });
+  }
+
+  void _updateRollingQrData() {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final sessionId = widget.sessionData['session_id'];
+    final classCode = widget.sessionData['class_code'] ?? widget.sessionData['class_obj']?['class_code'] ?? 'CLASS';
+    final classId = widget.sessionData['class_id'] ?? widget.sessionData['class_obj']?['id'] ?? 0;
+    
+    // Generate rotating nonce
+    final nonce = '$sessionId-$_qrStep-$nowMs'.hashCode.toRadixString(16);
+    
+    final payload = {
+      'session_id': sessionId,
+      'class_id': classId,
+      'class_code': classCode,
+      'step': _qrStep,
+      'qr_timestamp': nowMs,
+      'nonce': nonce,
+      'is_rolling': true,
+    };
+    
+    _currentDynamicQrData = jsonEncode(payload);
+  }
+
   @override
   void dispose() {
     _syncSubscription?.cancel();
     _connectivitySubscription?.cancel();
     _countdownTimer?.cancel();
     _refreshTimer?.cancel();
+    _qrRollingTimer?.cancel();
     super.dispose();
   }
 
@@ -918,14 +964,51 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
               ),
             ),
           ] else ...[
-            QrImageView(
-              data: widget.qrCodeData,
-              version: QrVersions.auto,
-              size: size,
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF00838f),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF007C91).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF007C91), width: 1.2),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      value: _qrRollingSecondsLeft / 10.0,
+                      strokeWidth: 2.2,
+                      color: const Color(0xFF007C91),
+                      backgroundColor: Colors.grey[200],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    "🛡️ Anti-Proxy: Rolling in ${_qrRollingSecondsLeft}s",
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF007C91),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: QrImageView(
+                key: ValueKey<int>(_qrStep),
+                data: _currentDynamicQrData ?? widget.qrCodeData,
+                version: QrVersions.auto,
+                size: size,
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF00838f),
+              ),
+            ),
+            const SizedBox(height: 14),
             const Text(
               "Scan to Mark Attendance",
               style: TextStyle(
@@ -1003,23 +1086,57 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
     final present = statistics['present'] ?? 0;
     final absent = statistics['absent'] ?? 0;
     final rate = statistics['attendance_rate'] ?? 0.0;
+    final verified = statistics['verified_count'] ?? (present > 0 ? present : 0);
+    final reviewRequired = statistics['review_required'] ?? 0;
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Colors.blue.shade50, Colors.white]),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [const Color(0xFFE0F2F1), Colors.white],
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.blue.shade200),
+        border: Border.all(color: const Color(0xFF80CBC4)),
       ),
       child: Column(
         children: [
-          const Text(
-            'Attendance Statistics',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1F2937),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Attendance & Presence',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF007C91).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF007C91), width: 1),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.shield_rounded, size: 14, color: Color(0xFF007C91)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Mesh Guard Active',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF007C91),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Row(
@@ -1043,15 +1160,29 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
             borderRadius: BorderRadius.circular(5),
           ),
           const SizedBox(height: 8),
-          Text(
-            '${rate.toStringAsFixed(1)}% Attendance Rate',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: rate >= 75
-                  ? Colors.green[700]
-                  : (rate >= 50 ? Colors.orange[700] : Colors.red[700]),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${rate.toStringAsFixed(1)}% Attendance Rate',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: rate >= 75
+                      ? Colors.green[700]
+                      : (rate >= 50 ? Colors.orange[700] : Colors.red[700]),
+                ),
+              ),
+              if (present > 0)
+                Text(
+                  '$verified Verified Proof${verified == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF007C91),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -1088,6 +1219,8 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
         final student = students[index];
         final isPresent = student['status'] == 'present';
         final hasRecord = student['has_record'] == true;
+        final isVerified = student['is_verified'] == true || (isPresent && hasRecord);
+        final isSuspicious = student['is_suspicious'] == true || student['status'] == 'suspicious';
 
         return Card(
           color: isPresent ? Colors.white : const Color(0xFFFFF0F0),
@@ -1109,17 +1242,78 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
               radius: 24,
               backgroundColor: isPresent
                   ? Colors.green.shade100
-                  : Colors.red.shade100,
+                  : (isSuspicious ? Colors.orange.shade100 : Colors.red.shade100),
               child: Icon(
-                isPresent ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                color: isPresent ? Colors.green : Colors.red,
+                isPresent
+                    ? Icons.check_circle_rounded
+                    : (isSuspicious ? Icons.warning_rounded : Icons.cancel_rounded),
+                color: isPresent
+                    ? Colors.green
+                    : (isSuspicious ? Colors.orange.shade800 : Colors.red),
                 size: 28,
               ),
             ),
-            title: Text(
-              student['username'] ?? 'Unknown',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    student['username'] ?? 'Unknown',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isPresent && isVerified)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2F1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF007C91), width: 0.8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified_user_rounded, size: 12, color: Color(0xFF007C91)),
+                        SizedBox(width: 3),
+                        Text(
+                          'VERIFIED',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF007C91),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (isSuspicious)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.orange.shade600, width: 0.8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.flag_rounded, size: 12, color: Colors.deepOrange),
+                        SizedBox(width: 3),
+                        Text(
+                          'REVIEW',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepOrange,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

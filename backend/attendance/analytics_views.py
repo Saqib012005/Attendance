@@ -234,7 +234,9 @@ def teacher_analytics_overview(request):
     timeline = P.session_timeline(matrix, sessions)
     punct = P.punctuality(matrix, sessions)
 
-    persist = request.query_params.get('persist', '1') not in ('0', 'false', 'no')
+    # Persistence is opt-in. This is a GET, and flags are evidence rows: reading
+    # the dashboard must not write AttendanceFlag records as a side effect.
+    persist = request.query_params.get('persist', '0') in ('1', 'true', 'yes')
     integrity = G.integrity_summary(matrix, class_ids, persist=persist)
 
     narrative = I.teacher_insights(
@@ -448,6 +450,57 @@ def teacher_integrity_flags(request):
         'count': len(rows),
         'note': (
             'Flags are advisory. They never alter attendance records or the '
+            'percentages computed from them.'
+        ),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def teacher_integrity_scan(request):
+    """
+    Run the integrity detectors and persist what they find.
+
+    This is the only path that writes AttendanceFlag rows. It is a POST because
+    it mutates evidence data: the dashboard GETs used to persist as a side effect
+    of being read, which meant a page refresh could create flag rows and the
+    "newly detected" count depended on who had looked at the tab last.
+
+    Query params: class_id, term_id, threshold, from, to, days - the same scope
+    resolution as the overview, so a scan covers exactly what the teacher sees.
+    """
+    user = request.user
+    if not _is_teacher(user):
+        return _forbidden('Only teachers can run an integrity scan')
+
+    classes = resolve_teacher_classes(user, request.query_params.get('class_id'))
+    class_ids = [c.id for c in classes]
+    ctx = build_context(request, class_ids)
+
+    if not classes:
+        return _empty_scope(ctx, 'No classes are assigned to this account.')
+
+    matrix = build_matrix(ctx, class_ids)
+    if not matrix.has_data:
+        return _empty_scope(
+            ctx,
+            'No concluded sessions with enrolled students exist in this window, '
+            'so there is nothing to scan.',
+        )
+
+    integrity = G.integrity_summary(matrix, class_ids, persist=True)
+
+    return Response({
+        'meta': ctx.meta(
+            has_data=True,
+            classes_in_scope=len(classes),
+            flags_persisted=True,
+        ),
+        'integrity': integrity,
+        'newly_detected': integrity['newly_detected'],
+        'previously_known': integrity['previously_known'],
+        'note': (
+            'Flags are advisory. Scanning never alters attendance records or the '
             'percentages computed from them.'
         ),
     })

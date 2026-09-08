@@ -9,6 +9,11 @@ gunicorn==23.0.0
 whitenoise==6.9.0
 psycopg2-binary==2.9.11
 PyJWT==2.10.1
+
+# Presence layer: established primitives only (Ed25519, HMAC-SHA256, HKDF)
+# and a canonical deterministic encoding for anything that gets signed.
+cryptography==50.0.0
+cbor2==6.1.4
 python-dotenv==1.1.1
 sqlparse==0.5.3
 qrcode==7.4.2

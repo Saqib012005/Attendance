@@ -39,6 +39,11 @@ class _TeacherAnalyticsScreenState extends State<TeacherAnalyticsScreen>
   String? _flagsError;
   String _flagStatus = 'open';
 
+  /// Detector output. Starts as whatever the overview reported (stored flags
+  /// only, since reading never persists) and is replaced by a scan result.
+  IntegritySummary? _scanned;
+  bool _scanning = false;
+
   /// null = all classes the teacher owns.
   String? _classId;
 
@@ -110,6 +115,43 @@ class _TeacherAnalyticsScreenState extends State<TeacherAnalyticsScreen>
       setState(() {
         _flagsError = e.message;
         _flagsLoading = false;
+      });
+    }
+  }
+
+  /// Explicit teacher action: run the detectors and store what they find.
+  ///
+  /// Loading this screen deliberately does not write flags, so this is the
+  /// only path that creates them. The flag list is reloaded afterwards
+  /// because a scan is what makes new rows appear in it.
+  Future<void> _runIntegrityScan() async {
+    if (_scanning) return;
+    setState(() {
+      _scanning = true;
+      _flagsError = null;
+    });
+    try {
+      final summary = await _service.scanIntegrity(classId: _classId);
+      if (!mounted) return;
+      setState(() {
+        _scanned = summary;
+        _scanning = false;
+      });
+      await _loadFlags();
+      if (!mounted) return;
+      final n = summary.newlyDetected;
+      final noun = n == 1 ? 'signal' : 'signals';
+      final message = n == 0
+          ? 'Scan complete. No new signals; '
+              '${summary.previouslyKnown} already on record.'
+          : 'Scan complete. $n new $noun recorded for review.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    } on AnalyticsException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _scanning = false;
+        _flagsError = e.message;
       });
     }
   }
@@ -343,9 +385,10 @@ class _TeacherAnalyticsScreenState extends State<TeacherAnalyticsScreen>
           if (selected) return;
           setState(() {
             _classId = id;
-            // Flags are scope-specific; drop the cached page so the tab
-            // re-fetches rather than showing another class's flags.
+            // Flags and detector output are scope-specific; drop both so the
+            // tab re-fetches rather than showing another class's results.
             _flags = null;
+            _scanned = null;
           });
           _load();
         },
@@ -516,6 +559,7 @@ class _TeacherAnalyticsScreenState extends State<TeacherAnalyticsScreen>
                       setState(() {
                         _classId = c.classId.toString();
                         _flags = null;
+                        _scanned = null;
                       });
                       _load();
                     },
@@ -654,10 +698,30 @@ class _TeacherAnalyticsScreenState extends State<TeacherAnalyticsScreen>
           FadeSlideIn(
             child: AnalyticsCard(
               title: 'Integrity signals',
-              subtitle: 'Detectors run on every load. Nothing here changes a '
-                  'mark.',
+              subtitle: _scanned == null
+                  ? 'Showing signals already on record. Run the detectors to '
+                      'check for new ones. Nothing here changes a mark.'
+                  : 'Detector output from this scan. Nothing here changes a '
+                      'mark.',
               icon: Icons.verified_user_outlined,
-              child: IntegritySummaryStrip(summary: _overview.integrity),
+              trailing: TextButton.icon(
+                onPressed: _scanning ? null : _runIntegrityScan,
+                icon: _scanning
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.radar, size: 16),
+                label: Text(_scanning ? 'Scanning' : 'Run detectors'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AnalyticsTheme.accent,
+                  textStyle: AnalyticsTheme.label,
+                ),
+              ),
+              child: IntegritySummaryStrip(
+                summary: _scanned ?? _overview.integrity,
+              ),
             ),
           ),
           const SizedBox(height: AnalyticsTheme.gapLg),
@@ -689,9 +753,15 @@ class _TeacherAnalyticsScreenState extends State<TeacherAnalyticsScreen>
           const SizedBox(height: AnalyticsTheme.gapLg),
           if (page == null || page.flags.isEmpty)
             AnalyticsEmptyState(
-              message: 'No $_flagStatus flags in this scope.',
-              detail: page?.note ??
-                  'Flags are advisory signals for review, not accusations.',
+              message: 'No $_flagStatus flags on record for this scope.',
+              // An unrun scan is not a clean bill of health, so say which
+              // of the two this is.
+              detail: _scanned == null
+                  ? 'The detectors have not been run on this scope yet. '
+                      'Use Run detectors above to check.'
+                  : page?.note ??
+                      'Flags are advisory signals for review, not '
+                          'accusations.',
               icon: Icons.verified_user_outlined,
             )
           else

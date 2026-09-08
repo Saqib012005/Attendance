@@ -18,7 +18,14 @@ class AttendanceService {
   }
 
   /// Mark attendance by scanning QR code
-  Future<Map<String, dynamic>> markAttendance(String sessionId, {bool isOfflineSync = false, String? timestamp}) async {
+  Future<Map<String, dynamic>> markAttendance(
+    String sessionId, {
+    bool isOfflineSync = false,
+    String? timestamp,
+    int? qrTimestamp,
+    int? step,
+    String? nonce,
+  }) async {
     try {
       final token = await _getToken();
       
@@ -29,6 +36,9 @@ class AttendanceService {
           data['timestamp'] = timestamp;
         }
       }
+      if (qrTimestamp != null) data['qr_timestamp'] = qrTimestamp;
+      if (step != null) data['step'] = step;
+      if (nonce != null) data['nonce'] = nonce;
 
       final response = await _dio.post(
         '/sessions/$sessionId/mark/',

@@ -38,7 +38,21 @@ class RegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ('username', 'email', 'role', 'password', 'password2')
         extra_kwargs = {'email': {'required': True}}
-    
+
+    # Roles a caller may self-assign on the public (AllowAny) register endpoint.
+    # 'admin' is deliberately absent: an admin account carries Django-admin
+    # access, so it is provisioned out of band (createsuperuser / seed), never
+    # by an unauthenticated POST.
+    SELF_SERVICE_ROLES = ('student', 'teacher')
+
+    def validate_role(self, value):
+        """Step 0: refuse privileged roles on a public endpoint."""
+        if value not in self.SELF_SERVICE_ROLES:
+            raise serializers.ValidationError(
+                'Role must be one of: %s.' % ', '.join(self.SELF_SERVICE_ROLES)
+            )
+        return value
+
     def validate_email(self, value):
         """Step 1 : Check if email already exists"""
         if User.objects.filter(email__iexact=value).exists():
@@ -65,11 +79,13 @@ class RegistrationSerializer(serializers.ModelSerializer):
 
         #Hash the password
         user.set_password(password)
-        
-        if user.role == 'admin':
-            user.is_staff = True
-            user.is_superuser = False
-        
+
+        # Registration never confers staff or superuser rights. Both flags are
+        # read_only on UserSerializer and there is no API path that sets them;
+        # they are granted only by an existing superuser.
+        user.is_staff = False
+        user.is_superuser = False
+
         user.save()
         return user
 

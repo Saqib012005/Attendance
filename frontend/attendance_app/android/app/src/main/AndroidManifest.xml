@@ -5,9 +5,13 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- android:usesCleartextTraffic is deliberately absent here. It applied to
+         release builds too, so a shipped APK would accept plain HTTP for the API
+         and for any presence proof in flight. Local HTTP for development lives in
+         src/debug/AndroidManifest.xml instead, which is merged into debug builds
+         only. -->
     <application
         android:label="attendance_app"
-        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

@@ -1,0 +1,32 @@
+{
+  "version": "2026.09-provisional",
+  "calibration": "uncalibrated",
+  "notes": "First artifact, edited once before it was ever deployed to add the fusion block; the presence package is untracked and no version of it has left the working tree, so nothing downstream can have recorded a decision against the earlier contents. Every version after this one is added rather than edited.\n\nThe challenge and proof windows are engineering choices with reasons, not measurements: step_seconds is set so a forwarded screenshot is stale before it can be used, and lifetime_seconds exceeds one step so a scan straddling a rotation still succeeds.\n\nThe fusion weights are an ordering and not a measurement. Nothing has been fitted against labeled data - calibration is 'uncalibrated', so no confidence produced under this artifact may be presented as a probability, and the code refuses to emit one rather than relying on anyone to remember. What the numbers do encode is an argument about which evidence bears on presence: the spatial weights are the largest in the table and are RESERVED, so the ceiling this artifact reports says plainly that the majority of the designed evidence base is unavailable on this build.",
+  "parameters": {
+    "challenge.step_seconds": 15,
+    "challenge.steps_per_epoch": 20,
+    "challenge.lifetime_seconds": 30,
+    "challenge.clock_skew_seconds": 10,
+    "challenge.accept_window_steps": 2,
+    "proof.max_offline_hours": 24,
+    "proof.nonce_retention_hours": 48,
+    "proof.max_future_skew_seconds": 120,
+    "relay.max_hops": 3,
+    "fusion.weight.identity_authenticated": 900,
+    "fusion.weight.device_bound": 700,
+    "fusion.weight.challenge_committed": 1400,
+    "fusion.weight.biometric_outcome": 1100,
+    "fusion.weight.origin_direct": 2300,
+    "fusion.weight.relay_depth": 450,
+    "fusion.weight.relay_integrity": 800,
+    "fusion.weight.anchor_fingerprint": 3400,
+    "fusion.weight.spatial_stability": 1700,
+    "fusion.weight.clock_consistency": 250,
+    "fusion.correlated_credit_pct": 35,
+    "fusion.block_cap_millinats": 4600,
+    "decide.present_millinats": 2500,
+    "decide.secondary_millinats": 1000,
+    "decide.min_coverage_pct": 20,
+    "decide.min_supplied_pct": 90
+  }
+}

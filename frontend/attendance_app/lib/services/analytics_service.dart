@@ -53,11 +53,13 @@ class AnalyticsService {
   Future<Map<String, dynamic>> _post(
     String path, {
     Map<String, dynamic>? body,
+    Map<String, dynamic>? query,
   }) async {
     try {
       final response = await _dio.post(
         path,
         data: body ?? const {},
+        queryParameters: _clean(query),
         options: await _authOptions(),
       );
       final data = response.data;
@@ -176,6 +178,22 @@ class AnalyticsService {
       query: {'status': status, 'class_id': classId, 'term_id': termId},
     );
     return IntegrityFlagPage.fromJson(json);
+  }
+
+  /// Run the integrity detectors and persist what they find.
+  ///
+  /// This is a POST because it writes [AttendanceFlag] rows. Reading the
+  /// dashboard no longer creates them as a side effect, so a scope with no
+  /// stored flags means "not scanned yet", not "nothing found".
+  Future<IntegritySummary> scanIntegrity({
+    String? classId,
+    String? termId,
+  }) async {
+    final json = await _post(
+      '/analytics/teacher/flags/scan/',
+      query: {'class_id': classId, 'term_id': termId},
+    );
+    return IntegritySummary.fromJson(json['integrity']);
   }
 
   /// Resolve or dismiss a flag. Flags are advisory; this never edits marks.

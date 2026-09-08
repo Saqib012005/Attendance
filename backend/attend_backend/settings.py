@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 import dj_database_url
 
@@ -24,15 +25,27 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-secret-key-attend-app-local-testing")
+# There is no fallback secret key. A default here would silently become the
+# production signing key for sessions, password-reset links and anything else
+# keyed off it, and the value would be readable in a public repository. Missing
+# configuration should stop the process, not be papered over.
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ImproperlyConfigured(
+        "SECRET_KEY is not set. Define it in the environment (App Service "
+        "application settings) or in backend/.env for local work."
+    )
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() == "true"
+# Defaults to off. A deployment that forgets to set this gets the safe value,
+# not a debug page with a traceback and settings dump on a public host.
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 
+# The wildcard is gone: with "*" in the list, Host-header checking is disabled
+# entirely, which is what makes cache-poisoning and password-reset-link
+# poisoning possible. Deployments name their own hostname.
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0,*").split(",")
+    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0,.up.railway.app,.railway.app,backend-production-b537.up.railway.app").split(",")
     if host.strip()
 ]
 AUTH_USER_MODEL = 'attendance.User'
@@ -171,15 +184,22 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://localhost:5000,http://localhost:59371,https://presence-cne6ezafcncnduf3.indiasouthcentral-01.azurewebsites.net",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://localhost:5000,http://localhost:59371,https://backend-production-b537.up.railway.app,https://presence-cne6ezafcncnduf3.indiasouthcentral-01.azurewebsites.net",
     ).split(",")
     if origin.strip()
 ]
 
-CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "True").lower() == "true"
+# Defaults to off. CORS_ALLOW_ALL_ORIGINS together with CORS_ALLOW_CREDENTIALS
+# below is the combination that lets any origin make credentialed requests.
+# Django serves the Flutter web build itself (see serve_flutter in urls.py), so
+# the first-party client is same-origin and needs none of this.
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False").lower() == "true"
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000,https://presence-cne6ezafcncnduf3.indiasouthcentral-01.azurewebsites.net").split(",")
+    for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000,https://backend-production-b537.up.railway.app,https://*.up.railway.app,https://*.railway.app,https://presence-cne6ezafcncnduf3.indiasouthcentral-01.azurewebsites.net",
+    ).split(",")
     if origin.strip()
 ]
 
@@ -190,3 +210,24 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# --- Android App Links -----------------------------------------------------
+#
+# Served by attendance.views.assetlinks_json at
+# /.well-known/assetlinks.json. Both values were previously hardcoded in that
+# view, and the fingerprint there matched no key that this project can build:
+# release signing used the machine-local debug keystore, whose fingerprint
+# differs per machine. Configuration belongs in configuration, and an empty
+# fingerprint list is an honest "not configured yet" rather than a claim about a
+# key nobody holds.
+#
+# ANDROID_CERT_FINGERPRINTS is a comma-separated list of uppercase, colon-
+# separated SHA-256 fingerprints of the *signing* certificates. With Play App
+# Signing that is the fingerprint Play reports, not the one from your local
+# upload keystore.
+ANDROID_APP_PACKAGE = os.getenv("ANDROID_APP_PACKAGE", "com.campusguard.attendance")
+ANDROID_CERT_FINGERPRINTS = [
+    fp.strip()
+    for fp in os.getenv("ANDROID_CERT_FINGERPRINTS", "").split(",")
+    if fp.strip()
+]

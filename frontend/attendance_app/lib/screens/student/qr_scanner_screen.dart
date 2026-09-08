@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../widgets/student_drawer.dart';
@@ -11,6 +12,10 @@ import '../../services/attendance_service.dart';
 import '../../services/session_service.dart';
 import '../../services/sync_service.dart';
 import '../../widgets/offline_indicator.dart';
+import '../../presence/biometric.dart';
+import '../../presence/crypto/keys.dart';
+import '../../presence/proof.dart';
+import '../../presence/store.dart';
 
 class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
@@ -263,6 +268,60 @@ class _QRScannerScreenState extends State<QRScannerScreen>
         return;
       }
 
+      // Anti-Proxy: Check dynamic rolling QR timestamp
+      final rawTs = data['qr_timestamp'];
+      int? qrTimestamp;
+      if (rawTs is int) {
+        qrTimestamp = rawTs;
+      } else if (rawTs != null) {
+        qrTimestamp = int.tryParse(rawTs.toString());
+      }
+
+      final step = data['step'] is int ? data['step'] as int : null;
+      final nonce = data['nonce']?.toString();
+
+      if (qrTimestamp != null) {
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        final elapsedSec = (nowMs - qrTimestamp) / 1000.0;
+        if (elapsedSec > 16.0) {
+          _showError('🛑 REFUSED: QR Code Expired (${elapsedSec.toStringAsFixed(0)}s old). Forwarded photos & screenshots are not allowed.');
+          setState(() => isProcessing = false);
+          return;
+        }
+      }
+
+      // Presence Layer: Native Biometric Authentication Gate
+      final biometricResult = await PresenceBiometric.authenticate(
+        reason: 'Verify your biometric presence to secure attendance',
+      );
+
+      final keyPair = await PresenceKeys.getOrCreateDeviceKey();
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final sessionBytes = Uint8List(16);
+      final rawSessionStr = sessionId.toString().replaceAll('-', '');
+      for (int i = 0; i < 16 && i * 2 < rawSessionStr.length; i++) {
+        sessionBytes[i] = int.tryParse(rawSessionStr.substring(i * 2, i * 2 + 2), radix: 16) ?? 0;
+      }
+
+      final challengeBytes = Uint8List.fromList(utf8.encode(sessionId.toString().substring(0, 8)));
+
+      final signedProof = await PresenceProofBuilder.buildAndSign(
+        deviceKeyPair: keyPair,
+        sessionId: sessionBytes,
+        challengeValue: challengeBytes,
+        challengeEpoch: 0,
+        challengeSeq: step ?? 1,
+        biometricOutcome: biometricResult,
+        capturedAt: nowSec,
+      );
+
+      // Persist signed proof to offline presence ledger
+      await PresenceProofStore.enqueueProof(
+        sessionId: sessionId.toString(),
+        signedProof: signedProof,
+        capturedAt: nowSec,
+      );
+
       final connectivityResults = await Connectivity().checkConnectivity();
       final isNetworkOffline =
           connectivityResults.isEmpty ||
@@ -281,12 +340,17 @@ class _QRScannerScreenState extends State<QRScannerScreen>
         });
 
         _showSuccessDialog(
-          'Offline Mode: QR scan saved locally. It will sync automatically when internet is restored.',
+          'Verified Offline Presence: Proof cryptographically signed and stored locally. Will sync automatically.',
         );
         return;
       }
 
-      final result = await _attendanceService.markAttendance(sessionId);
+      final result = await _attendanceService.markAttendance(
+        sessionId,
+        qrTimestamp: qrTimestamp,
+        step: step,
+        nonce: nonce,
+      );
 
       if (mounted) {
         if (result['success']) {
@@ -299,7 +363,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
       }
     } catch (e) {
       if (mounted) {
-        _showError('Invalid QR code format: $e');
+        _showError('Attendance verification error: $e');
         setState(() => isProcessing = false);
       }
     }

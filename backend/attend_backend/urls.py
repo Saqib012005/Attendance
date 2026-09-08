@@ -66,11 +66,13 @@ from attendance.analytics_views import (
     teacher_at_risk_list,
     teacher_student_detail,
     teacher_integrity_flags,
+    teacher_integrity_scan,
     resolve_integrity_flag,
     student_analytics_overview,
     student_calendar_data,
     student_forecast_simulator,
 )
+from attendance.presence_views import session_challenge, submit_proof
 
 FLUTTER_WEB_DIR = os.path.join(settings.BASE_DIR, 'flutter_web')
 
@@ -157,10 +159,27 @@ urlpatterns = [
     path('api/v1/analytics/teacher/at-risk/', teacher_at_risk_list, name='teacher_at_risk_list'),
     path('api/v1/analytics/teacher/student/<int:student_id>/', teacher_student_detail, name='teacher_student_detail'),
     path('api/v1/analytics/teacher/flags/', teacher_integrity_flags, name='teacher_integrity_flags'),
+    path('api/v1/analytics/teacher/flags/scan/', teacher_integrity_scan, name='teacher_integrity_scan'),
     path('api/v1/analytics/teacher/flags/<int:flag_id>/resolve/', resolve_integrity_flag, name='resolve_integrity_flag'),
     path('api/v1/analytics/student/overview/', student_analytics_overview, name='student_analytics_overview'),
     path('api/v1/analytics/student/calendar/', student_calendar_data, name='student_calendar_data'),
     path('api/v1/analytics/student/simulate/', student_forecast_simulator, name='student_forecast_simulator'),
+
+    # Classroom presence: the one route a signed proof becomes attendance through.
+    # The session is named inside the signed body, not in this path, so a proof
+    # cannot be pointed at a session it was not built for.
+    path('api/v1/presence/proofs/', submit_proof, name='presence_submit_proof'),
+
+    # The teacher's own screen reads the current challenge from here. A `GET`
+    # because issuance is a pure function of the session and the step and writes
+    # nothing at all - and restricted to the teacher who owns the session, since
+    # serving these bytes over the network to anyone else would defeat the point
+    # of displaying them on a screen inside the room.
+    path(
+        'api/v1/presence/sessions/<uuid:session_id>/challenge/',
+        session_challenge,
+        name='presence_session_challenge',
+    ),
 
     # Flutter Web — must be last
     re_path(r'^(?P<path>.*)$', serve_flutter, name='flutter_web'),

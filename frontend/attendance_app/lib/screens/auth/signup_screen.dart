@@ -247,7 +247,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
                                             'value': 'teacher',
                                             'label': 'Teacher',
                                           },
-                                          {'value': 'admin', 'label': 'Admin'},
+                                          // No 'Admin' option: staff accounts
+                                          // are provisioned by an existing
+                                          // superuser, and the register
+                                          // endpoint rejects the role.
                                         ]
                                         .map(
                                           (role) => DropdownMenuItem(
