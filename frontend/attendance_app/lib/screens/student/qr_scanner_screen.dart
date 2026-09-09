@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../widgets/student_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
@@ -42,6 +41,14 @@ class _QRScannerScreenState extends State<QRScannerScreen>
   bool isPatternMode = false;
   bool _cameraPermissionGranted = false;
 
+  // Comprehensive anti-proxy presence requirement flags
+  bool _cameraGranted = false;
+  bool _bluetoothGranted = false;
+  bool _locationGranted = false;
+  bool _bluetoothServiceEnabled = false;
+  bool _allRequirementsMet = false;
+  bool _isCheckingPermissions = true;
+
   bool _isCameraInitializing = false;
   bool _isSwitchingMode = false;
 
@@ -59,7 +66,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
     WidgetsBinding.instance.addObserver(this);
     // Initialize MobileScannerController with torch enabled
     _scannerController = MobileScannerController(torchEnabled: true);
-    _checkCameraPermission();
+    _checkAllRequirements(promptUser: false);
   }
 
   @override
@@ -75,11 +82,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.resumed) {
-      if (!isPatternMode) {
-        _scannerController.start();
-      } else {
-        _initializePatternCamera();
-      }
+      _checkAllRequirements(promptUser: false);
     } else {
       if (!isPatternMode) {
         _scannerController.stop();
@@ -90,44 +93,44 @@ class _QRScannerScreenState extends State<QRScannerScreen>
     }
   }
 
-  Future<void> _checkCameraPermission() async {
-    final status = await Permission.camera.request();
-    if (mounted) {
-      setState(() {
-        _cameraPermissionGranted = status.isGranted;
-      });
-      if (!status.isGranted) {
-        _showPermissionDialog();
-      } else {
-        // Also ensure Bluetooth permissions for in-room BLE proximity & mesh
-        BleManager().requestBluetoothPermissions(context);
+  Future<void> _checkAllRequirements({bool promptUser = false}) async {
+    if (!mounted) return;
+    setState(() => _isCheckingPermissions = true);
+
+    if (promptUser) {
+      await BleManager().requestAllStudentRequirements(context);
+    }
+
+    final status = await BleManager().checkDetailedStudentStatus();
+    if (!mounted) return;
+
+    final camOk = status['camera'] ?? false;
+    final btOk = status['bluetooth_permission'] ?? false;
+    final locOk = status['location_permission'] ?? false;
+    final btServiceOk = status['bluetooth_service'] ?? false;
+    final allOk = status['all_ready'] ?? false;
+
+    setState(() {
+      _cameraGranted = camOk;
+      _bluetoothGranted = btOk;
+      _locationGranted = locOk;
+      _bluetoothServiceEnabled = btServiceOk;
+      _cameraPermissionGranted = camOk;
+      _allRequirementsMet = allOk;
+      _isCheckingPermissions = false;
+    });
+
+    if (allOk) {
+      if (!isPatternMode) {
+        _scannerController.start();
+      } else if (_cameraController == null || !_cameraController!.value.isInitialized) {
+        _initializePatternCamera();
+      }
+    } else {
+      if (!isPatternMode) {
+        _scannerController.stop();
       }
     }
-  }
-
-  void _showPermissionDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Camera Permission Required'),
-        content: const Text(
-          'This app needs camera access to scan QR codes for attendance. Please grant camera permission in app settings.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              openAppSettings();
-            },
-            child: const Text('Open Settings'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _initializePatternCamera() async {
@@ -248,6 +251,17 @@ class _QRScannerScreenState extends State<QRScannerScreen>
 
   Future<void> _handleQRCode(String qrData) async {
     if (isProcessing || hasScanned || isPatternMode) return;
+
+    if (!_allRequirementsMet) {
+      _showError('🛑 Action blocked: Camera, Location, and Bluetooth permissions are required.');
+      return;
+    }
+
+    final isBtOk = await BleManager().ensureBluetoothEnabled(context, isTeacher: false);
+    if (!isBtOk) {
+      _showError('🛑 Attendance blocked: Bluetooth must be turned ON to detect teacher presence.');
+      return;
+    }
 
     setState(() {
       isProcessing = true;
@@ -385,6 +399,18 @@ class _QRScannerScreenState extends State<QRScannerScreen>
         _cameraController == null ||
         !_cameraController!.value.isInitialized)
       return;
+
+    if (!_allRequirementsMet) {
+      _showError('🛑 Action blocked: Camera, Location, and Bluetooth permissions are required.');
+      return;
+    }
+
+    final isBtOk = await BleManager().ensureBluetoothEnabled(context, isTeacher: false);
+    if (!isBtOk) {
+      _showError('🛑 Attendance blocked: Bluetooth must be turned ON to detect teacher presence.');
+      return;
+    }
+
     setState(() => isProcessing = true);
 
     try {
@@ -661,56 +687,39 @@ class _QRScannerScreenState extends State<QRScannerScreen>
           ),
         ),
       ),
-      body: Stack(
-        children: [
-          // Camera Background
-          if (_cameraPermissionGranted)
-            Positioned.fill(
-              child: GestureDetector(
-                onScaleStart: _handleScaleStart,
-                onScaleUpdate: _handleScaleUpdate,
-                child: isPatternMode
-                    ? (_cameraController != null &&
-                              _cameraController!.value.isInitialized
-                          ? CameraPreview(_cameraController!)
-                          : const Center(child: CircularProgressIndicator()))
-                    : MobileScanner(
-                        controller: _scannerController,
-                        onDetect: (capture) {
-                          if (isPatternMode) return;
-                          final List<Barcode> barcodes = capture.barcodes;
-                          for (final barcode in barcodes) {
-                            if (barcode.rawValue != null) {
-                              _handleQRCode(barcode.rawValue!);
-                              break;
-                            }
-                          }
-                        },
-                      ),
-              ),
-            )
-          else
-            // No permission
-            Container(
-              color: Colors.black87,
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.camera_alt, color: Colors.white54, size: 80),
-                    SizedBox(height: 16),
-                    Text(
-                      'Camera permission required',
-                      style: TextStyle(color: Colors.white54, fontSize: 16),
-                    ),
-                  ],
+      body: !_allRequirementsMet
+          ? _buildRequirementsGateOverlay(isMobile)
+          : Stack(
+              children: [
+                // Camera Background
+                Positioned.fill(
+                  child: GestureDetector(
+                    onScaleStart: _handleScaleStart,
+                    onScaleUpdate: _handleScaleUpdate,
+                    child: isPatternMode
+                        ? (_cameraController != null &&
+                                  _cameraController!.value.isInitialized
+                              ? CameraPreview(_cameraController!)
+                              : const Center(child: CircularProgressIndicator()))
+                        : MobileScanner(
+                            controller: _scannerController,
+                            onDetect: (capture) {
+                              if (isPatternMode) return;
+                              final List<Barcode> barcodes = capture.barcodes;
+                              for (final barcode in barcodes) {
+                                if (barcode.rawValue != null) {
+                                  _handleQRCode(barcode.rawValue!);
+                                  break;
+                                }
+                              }
+                            },
+                          ),
+                  ),
                 ),
-              ),
-            ),
 
-          // In-Room BLE Proximity & Mesh Status Badge
-          Positioned(
-            top: 20,
+                // In-Room BLE Proximity & Mesh Status Badge
+                Positioned(
+                  top: 20,
             left: 0,
             right: 0,
             child: Center(
@@ -858,6 +867,178 @@ class _QRScannerScreenState extends State<QRScannerScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRequirementsGateOverlay(bool isMobile) {
+    return Container(
+      color: const Color(0xFF0F172A), // Dark slate premium background
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 20 : 40, vertical: 24),
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon with glow
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.redAccent.withOpacity(0.12),
+                  border: Border.all(color: Colors.redAccent.withOpacity(0.4), width: 2),
+                ),
+                child: const Icon(
+                  Icons.security_update_warning_rounded,
+                  color: Colors.redAccent,
+                  size: 56,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Action Blocked: Permissions Required',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'CampusGuard anti-proxy presence requires Camera, Bluetooth, and Location to verify you are physically inside the classroom.',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+
+              // Status Checklist Card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  children: [
+                    _buildRequirementRow(
+                      icon: Icons.camera_alt_rounded,
+                      title: 'Camera Access',
+                      subtitle: 'Needed to scan attendance code',
+                      isGranted: _cameraGranted,
+                    ),
+                    const Divider(color: Colors.white10, height: 20),
+                    _buildRequirementRow(
+                      icon: Icons.bluetooth_rounded,
+                      title: 'Bluetooth Permission',
+                      subtitle: 'Needed to detect classroom beacon',
+                      isGranted: _bluetoothGranted,
+                    ),
+                    const Divider(color: Colors.white10, height: 20),
+                    _buildRequirementRow(
+                      icon: Icons.location_on_rounded,
+                      title: 'Location Permission',
+                      subtitle: 'Needed for BLE radio ranging (Android)',
+                      isGranted: _locationGranted,
+                    ),
+                    const Divider(color: Colors.white10, height: 20),
+                    _buildRequirementRow(
+                      icon: Icons.bluetooth_searching_rounded,
+                      title: 'Phone Bluetooth Switch',
+                      subtitle: _bluetoothServiceEnabled
+                          ? 'Bluetooth radio is active'
+                          : 'Turn ON Bluetooth in phone settings',
+                      isGranted: _bluetoothServiceEnabled,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 28),
+
+              // Action Buttons
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _checkAllRequirements(promptUser: true),
+                  icon: const Icon(Icons.check_circle_outline, size: 22),
+                  label: const Text(
+                    'Enable Bluetooth & Permissions',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00838f),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await openAppSettings();
+                  },
+                  icon: const Icon(Icons.settings, size: 20, color: Colors.white70),
+                  label: const Text(
+                    'Open App Settings',
+                    style: TextStyle(fontSize: 14, color: Colors.white70),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRequirementRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool isGranted,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isGranted ? Colors.green.withOpacity(0.15) : Colors.redAccent.withOpacity(0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: isGranted ? Colors.greenAccent : Colors.redAccent, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(color: isGranted ? Colors.greenAccent.shade100 : Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        Icon(
+          isGranted ? Icons.check_circle_rounded : Icons.cancel_rounded,
+          color: isGranted ? Colors.greenAccent : Colors.redAccent,
+          size: 22,
+        ),
+      ],
     );
   }
 

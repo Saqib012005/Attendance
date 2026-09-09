@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import '../../services/class_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/teacher_drawer.dart';
 import 'dart:convert';
@@ -92,7 +91,11 @@ class _SessionPageState extends State<SessionPage>
     }
 
     // Ensure Bluetooth is enabled on mobile before starting classroom session
-    await BleManager().ensureBluetoothEnabled(context, isTeacher: true);
+    final btOk = await BleManager().ensureBluetoothEnabled(context, isTeacher: true);
+    if (!btOk) {
+      _showErrorSnackBar("🛑 Session blocked: Turn ON Bluetooth to create and broadcast an attendance session.");
+      return;
+    }
 
     setState(() => isCreatingSession = true);
 

@@ -72,13 +72,30 @@ class BleManager {
         );
 
         if (!allGranted && context != null && context.mounted) {
-          _showPermissionDialog(context);
+          final userOpened = await _showPermissionDialog(context);
+          if (userOpened == true) {
+            await openAppSettings();
+            final recheck = await [
+              Permission.bluetoothScan,
+              Permission.bluetoothAdvertise,
+              Permission.bluetoothConnect,
+              Permission.locationWhenInUse,
+            ].request();
+            return recheck.values.every((s) => s.isGranted || s.isLimited);
+          }
+          return false;
         }
         return allGranted;
       } else if (Platform.isIOS) {
         final status = await Permission.bluetooth.request();
         if (!status.isGranted && context != null && context.mounted) {
-          _showPermissionDialog(context);
+          final userOpened = await _showPermissionDialog(context);
+          if (userOpened == true) {
+            await openAppSettings();
+            final recheck = await Permission.bluetooth.status;
+            return recheck.isGranted;
+          }
+          return false;
         }
         return status.isGranted;
       }
@@ -88,7 +105,7 @@ class BleManager {
     return true;
   }
 
-  /// Check if Bluetooth is enabled, and if not, prompt the user with an interactive dialog.
+  /// Check if Bluetooth is enabled, and if not, prompt the user with an interactive blocking dialog.
   Future<bool> ensureBluetoothEnabled(BuildContext context, {bool isTeacher = false}) async {
     if (kIsWeb) return true;
 
@@ -98,9 +115,16 @@ class BleManager {
     }
 
     try {
-      final isBluetoothServiceEnabled = await Permission.bluetooth.serviceStatus.isEnabled;
+      bool isBluetoothServiceEnabled = await Permission.bluetooth.serviceStatus.isEnabled;
       if (!isBluetoothServiceEnabled && context.mounted) {
-        _showTurnOnBluetoothDialog(context, isTeacher: isTeacher);
+        final userWantsSettings = await _showTurnOnBluetoothDialog(context, isTeacher: isTeacher);
+        if (userWantsSettings == true) {
+          await openAppSettings();
+          // Give OS time to update toggle if returning
+          await Future.delayed(const Duration(milliseconds: 500));
+          isBluetoothServiceEnabled = await Permission.bluetooth.serviceStatus.isEnabled;
+          return isBluetoothServiceEnabled;
+        }
         return false;
       }
     } catch (e) {
@@ -110,32 +134,39 @@ class BleManager {
     return true;
   }
 
-  /// Show user-friendly dialog when the phone's physical Bluetooth toggle is OFF.
-  void _showTurnOnBluetoothDialog(BuildContext context, {bool isTeacher = false}) {
-    showDialog(
+  /// Show blocking dialog when the phone's physical Bluetooth toggle is OFF.
+  Future<bool?> _showTurnOnBluetoothDialog(BuildContext context, {bool isTeacher = false}) {
+    return showDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: const [
             Icon(Icons.bluetooth_disabled, color: Colors.orange, size: 28),
             SizedBox(width: 10),
-            Text('Turn On Bluetooth', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Expanded(
+              child: Text(
+                'Bluetooth Required',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
           ],
         ),
         content: Text(
           isTeacher
               ? 'Your phone\'s Bluetooth is currently turned OFF.\n\n'
-                'To broadcast the session beacon to your students and verify in-room attendance, please turn on Bluetooth in your phone\'s control panel or settings.'
+                'CampusGuard requires Bluetooth to broadcast the classroom session beacon to your students and prevent proxy attendance.\n\n'
+                '🛑 You cannot create or start a session until Bluetooth is turned ON.'
               : 'Your phone\'s Bluetooth is currently turned OFF.\n\n'
-                'To scan the classroom presence beacon and mark attendance, please turn on Bluetooth.',
+                'CampusGuard requires Bluetooth to detect the teacher\'s in-room presence beacon and eliminate proxy scans.\n\n'
+                '🛑 You cannot scan or mark attendance until Bluetooth is turned ON.',
           style: const TextStyle(fontSize: 14),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Dismiss', style: TextStyle(color: Colors.grey)),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
@@ -144,11 +175,10 @@ class BleManager {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
-              Navigator.pop(ctx);
-              openAppSettings();
+              Navigator.pop(ctx, true);
             },
             icon: const Icon(Icons.bluetooth, size: 18),
-            label: const Text('Open Settings'),
+            label: const Text('Open Settings & Turn On'),
           ),
         ],
       ),
@@ -156,8 +186,8 @@ class BleManager {
   }
 
   /// Show user-friendly dialog when Bluetooth permissions are missing or denied.
-  void _showPermissionDialog(BuildContext context) {
-    showDialog(
+  Future<bool?> _showPermissionDialog(BuildContext context) {
+    return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
@@ -166,18 +196,19 @@ class BleManager {
           children: const [
             Icon(Icons.bluetooth_searching, color: Colors.blueAccent, size: 28),
             SizedBox(width: 10),
-            Text('Enable Bluetooth & Mesh', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Expanded(
+              child: Text('Permissions Required', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
         content: const Text(
-          'CampusGuard uses Bluetooth Low Energy (BLE) to verify in-classroom proximity, '
-          'activate mesh relays, and eliminate proxy attendance.\n\n'
-          'Please grant Bluetooth permissions in settings to continue.',
+          'CampusGuard uses Bluetooth and Location permissions to verify in-classroom proximity and eliminate proxy attendance.\n\n'
+          '🛑 Attendance features are strictly blocked until these permissions are granted.',
           style: TextStyle(fontSize: 14),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton.icon(
@@ -187,8 +218,7 @@ class BleManager {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
-              Navigator.pop(ctx);
-              openAppSettings();
+              Navigator.pop(ctx, true);
             },
             icon: const Icon(Icons.settings, size: 18),
             label: const Text('Open Settings'),
@@ -196,6 +226,120 @@ class BleManager {
         ],
       ),
     );
+  }
+
+  /// Check detailed readiness status for student scanner
+  Future<Map<String, bool>> checkDetailedStudentStatus() async {
+    if (kIsWeb) {
+      return {
+        'camera': true,
+        'bluetooth_permission': true,
+        'location_permission': true,
+        'bluetooth_service': true,
+        'all_ready': true,
+      };
+    }
+
+    try {
+      final cameraStatus = await Permission.camera.status;
+      final cameraGranted = cameraStatus.isGranted || cameraStatus.isLimited;
+
+      bool btPermGranted = true;
+      bool locPermGranted = true;
+
+      if (Platform.isAndroid) {
+        final scanStatus = await Permission.bluetoothScan.status;
+        final connStatus = await Permission.bluetoothConnect.status;
+        final locStatus = await Permission.locationWhenInUse.status;
+
+        btPermGranted = (scanStatus.isGranted || scanStatus.isLimited) &&
+            (connStatus.isGranted || connStatus.isLimited);
+        locPermGranted = locStatus.isGranted || locStatus.isLimited;
+      } else if (Platform.isIOS) {
+        final btStatus = await Permission.bluetooth.status;
+        btPermGranted = btStatus.isGranted || btStatus.isLimited;
+        final locStatus = await Permission.locationWhenInUse.status;
+        locPermGranted = locStatus.isGranted || locStatus.isLimited;
+      }
+
+      bool isBtEnabled = false;
+      try {
+        isBtEnabled = await Permission.bluetooth.serviceStatus.isEnabled;
+      } catch (_) {
+        isBtEnabled = true;
+      }
+
+      final allReady = cameraGranted && btPermGranted && locPermGranted && isBtEnabled;
+
+      return {
+        'camera': cameraGranted,
+        'bluetooth_permission': btPermGranted,
+        'location_permission': locPermGranted,
+        'bluetooth_service': isBtEnabled,
+        'all_ready': allReady,
+      };
+    } catch (e) {
+      debugPrint('[BleManager] checkDetailedStudentStatus error: $e');
+      return {
+        'camera': false,
+        'bluetooth_permission': false,
+        'location_permission': false,
+        'bluetooth_service': false,
+        'all_ready': false,
+      };
+    }
+  }
+
+  /// Request all required student permissions & prompt for Bluetooth if OFF
+  Future<bool> requestAllStudentRequirements(BuildContext context) async {
+    if (kIsWeb) return true;
+
+    try {
+      // 1. Request Camera
+      final camStatus = await Permission.camera.request();
+      
+      // 2. Request Bluetooth & Location
+      if (Platform.isAndroid) {
+        await [
+          Permission.bluetoothScan,
+          Permission.bluetoothAdvertise,
+          Permission.bluetoothConnect,
+          Permission.locationWhenInUse,
+        ].request();
+      } else if (Platform.isIOS) {
+        await [
+          Permission.bluetooth,
+          Permission.locationWhenInUse,
+        ].request();
+      }
+
+      // 3. Recheck status
+      final statusMap = await checkDetailedStudentStatus();
+
+      // If permissions still missing, offer settings
+      if (!statusMap['camera']! || !statusMap['bluetooth_permission']! || !statusMap['location_permission']!) {
+        if (context.mounted) {
+          final openSettings = await _showPermissionDialog(context);
+          if (openSettings == true) {
+            await openAppSettings();
+          }
+        }
+      }
+
+      // If Bluetooth service is disabled, prompt to turn ON
+      if (!statusMap['bluetooth_service']! && context.mounted) {
+        final openSettings = await _showTurnOnBluetoothDialog(context, isTeacher: false);
+        if (openSettings == true) {
+          await openAppSettings();
+        }
+      }
+
+      final finalStatus = await checkDetailedStudentStatus();
+      return finalStatus['all_ready'] == true;
+    } catch (e) {
+      debugPrint('[BleManager] requestAllStudentRequirements error: $e');
+      return false;
+    }
   }
 
   /// Teacher Mode: Start broadcasting the active session beacon over BLE.
