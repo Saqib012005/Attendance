@@ -16,6 +16,7 @@ import '../../presence/biometric.dart';
 import '../../presence/crypto/keys.dart';
 import '../../presence/proof.dart';
 import '../../presence/store.dart';
+import '../../presence/ble_manager.dart';
 
 class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
@@ -97,6 +98,9 @@ class _QRScannerScreenState extends State<QRScannerScreen>
       });
       if (!status.isGranted) {
         _showPermissionDialog();
+      } else {
+        // Also ensure Bluetooth permissions for in-room BLE proximity & mesh
+        BleManager().requestBluetoothPermissions(context);
       }
     }
   }
@@ -345,11 +349,18 @@ class _QRScannerScreenState extends State<QRScannerScreen>
         return;
       }
 
+      // Presence Layer: Capture In-Room BLE Beacon & Mesh Proximity
+      final bleSighting = await BleManager().scanForSessionPresence(
+        context: context,
+        sessionId: sessionId.toString(),
+      );
+
       final result = await _attendanceService.markAttendance(
         sessionId,
         qrTimestamp: qrTimestamp,
         step: step,
         nonce: nonce,
+        bleEvidence: bleSighting.toJson(),
       );
 
       if (mounted) {
@@ -696,6 +707,19 @@ class _QRScannerScreenState extends State<QRScannerScreen>
                 ),
               ),
             ),
+
+          // In-Room BLE Proximity & Mesh Status Badge
+          Positioned(
+            top: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: BleManager().buildBleStatusBadge(
+                isTeacher: false,
+                isScanning: isProcessing,
+              ),
+            ),
+          ),
 
           // Scanning Frame Overlay
           Center(

@@ -48,5 +48,12 @@
 	<!-- Camera Permission -->
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to scan QR codes for attendance</string>
+	<!-- Bluetooth & Location Permissions for CampusGuard Presence -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>CampusGuard needs Bluetooth to detect proximity to the classroom session and prevent attendance fraud.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>CampusGuard needs Bluetooth peripheral access to broadcast classroom attendance beacons.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>CampusGuard needs location access to verify in-classroom proximity during session scanning.</string>
 </dict>
 </plist>

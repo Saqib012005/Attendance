@@ -12,6 +12,7 @@ import 'session_active_screen.dart';
 import '../../services/sync_service.dart';
 import '../../widgets/teacher_web_layout.dart';
 import '../../widgets/offline_indicator.dart';
+import '../../presence/ble_manager.dart';
 
 class SessionPage extends StatefulWidget {
   final List<Map<String, String>> subjects;
@@ -89,6 +90,9 @@ class _SessionPageState extends State<SessionPage>
       _showErrorSnackBar("Please enter a valid duration in minutes.");
       return;
     }
+
+    // Ensure Bluetooth is enabled on mobile before starting classroom session
+    await BleManager().ensureBluetoothEnabled(context, isTeacher: true);
 
     setState(() => isCreatingSession = true);
 

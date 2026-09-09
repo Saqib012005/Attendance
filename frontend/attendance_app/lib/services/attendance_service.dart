@@ -25,6 +25,7 @@ class AttendanceService {
     int? qrTimestamp,
     int? step,
     String? nonce,
+    Map<String, dynamic>? bleEvidence,
   }) async {
     try {
       final token = await _getToken();
@@ -39,6 +40,7 @@ class AttendanceService {
       if (qrTimestamp != null) data['qr_timestamp'] = qrTimestamp;
       if (step != null) data['step'] = step;
       if (nonce != null) data['nonce'] = nonce;
+      if (bleEvidence != null) data['ble_evidence'] = bleEvidence;
 
       final response = await _dio.post(
         '/sessions/$sessionId/mark/',

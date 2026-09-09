@@ -16,20 +16,6 @@ media/
 staticfiles/
 
 # Environment variables
-.env
-*.env
-
-# Docker
-docker-compose.override.yml
-
-# Build artifacts / scratch (should never be committed)
-backend/flutter_web/
-backend/*.json
-backend/debug_thresh.jpg
-diff*.txt
-fix_*.py
-old_session_create*.dart
-original_session_create.dart
 scratch/
 frontend/attendance_app/out.txt
 *.bak
@@ -67,3 +53,10 @@ frontend/attendance_app/ios/.symlinks/
 # Generated APKs (optional - remove if you want to track them)
 *.apk
 *.aab
+
+# IP analysis kept out of the public tree on purpose. This repository is public
+# under three remotes, and a public description of a mechanism can start novelty
+# clocks in some jurisdictions and can also hand a competitor the reproduction
+# path. The public stub at docs/campusguard/11-ip-analysis.md says what is being
+# withheld and why; the analysis itself lives here and is not committed.
+docs/campusguard/private/

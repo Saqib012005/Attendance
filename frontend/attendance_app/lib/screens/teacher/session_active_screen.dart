@@ -9,6 +9,7 @@ import '../../widgets/pattern_painter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../services/sync_service.dart';
 import '../../widgets/offline_indicator.dart';
+import '../../presence/ble_manager.dart';
 
 class SessionActiveScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
@@ -70,6 +71,18 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
         }
       }
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final sid = widget.sessionData['session_id'] ?? widget.sessionData['id'] ?? 'SESSION';
+        final code = widget.sessionData['class_code'] ?? widget.sessionData['class_obj']?['class_code'] ?? 'CLASS';
+        BleManager().startTeacherBeacon(
+          context: context,
+          sessionId: sid.toString(),
+          classCode: code.toString(),
+        );
+      }
+    });
   }
 
   void _startRollingQr() {
@@ -113,6 +126,7 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
 
   @override
   void dispose() {
+    BleManager().stopTeacherBeacon();
     _syncSubscription?.cancel();
     _connectivitySubscription?.cancel();
     _countdownTimer?.cancel();
@@ -964,6 +978,10 @@ class _SessionActiveScreenState extends State<SessionActiveScreen> {
               ),
             ),
           ] else ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: BleManager().buildBleStatusBadge(isTeacher: true),
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               margin: const EdgeInsets.only(bottom: 12),

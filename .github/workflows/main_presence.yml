@@ -1,6 +1,13 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 # More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
+#
+# `test` gates `build`, which gates `deploy`. That ordering is the point of this
+# file. The presence layer is an evidence system whose whole value is that a
+# verdict can be re-derived from the proof that produced it, and deploying one
+# without running the suite that checks the re-derivation would make production
+# the first place a regression showed up. Nothing here deploys on a pull request,
+# and nothing deploys from a branch other than main.
 
 name: Build and deploy Python app to Azure Web App - presence
 
@@ -8,11 +15,62 @@ on:
   push:
     branches:
       - main
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      # Deliberately a literal, and deliberately not a repository secret.
+      # `settings.py` refuses to boot without a key, so a test run needs one;
+      # handing it the deployment's key would put a production signing secret
+      # inside every run, including one triggered by a pull request from a fork.
+      # A junk value that says so in its own name cannot sign anything a real
+      # client would accept, which is the property worth having here.
+      SECRET_KEY: ci-only-throwaway-key-not-used-by-any-deployment
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # The version the container image runs (backend/Dockerfile). A suite
+          # that passes on a different minor than production serves is a weaker
+          # signal than it looks.
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Django system check
+        working-directory: backend
+        run: python manage.py check
+
+      - name: Every model change has a migration
+        working-directory: backend
+        # A model edited without its migration passes every test, because the
+        # test runner builds its database from the models - and then fails on
+        # deploy against a database built from the migrations.
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run the test suite
+        working-directory: backend
+        run: python manage.py test attendance -v 2
+
   build:
     runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
 
@@ -30,6 +88,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     permissions:
       id-token: write
       contents: read
@@ -39,7 +98,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
-      
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
